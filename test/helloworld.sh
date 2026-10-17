@@ -21,7 +21,7 @@ if [[ "$output" == *"$expected"* ]]; then
     echo -e "Ok"
     exit 0
 else
-    echo -e "Error expected: $expected"
-    echo "Got: $output"
+    echo -e "Error expected:\n $expected"
+    echo "Got:\n $output"
     exit 1
 fi
