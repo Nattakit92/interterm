@@ -1,19 +1,15 @@
 use interterm::Input;
-use std::io::{stdin,Read};
 
 const CTRLC: u128 = 0x3;
 
 fn main(){
-    let _ = Input::new();
-    loop{
-        let mut buf = [0u8; 16];
-        let n = stdin().read(&mut buf).unwrap();
-        if n == 0 {
-            break;
+    let mut input = Input::new();
+    let stopper = input.stopper();
+    input.add_listener(move |buf| {
+        if u128::from_be_bytes(buf.clone()) >> 120 == CTRLC{
+            stopper.stop();
         }
-        if u128::from_be_bytes(buf) >> ((16 - n) * 8) == CTRLC{
-            return;
-        }
-        println!("You type:{}",str::from_utf8(&buf).unwrap());
-    }
+        println!("You type:{:#x}",u128::from_be_bytes(*buf) >> 31);
+    });
+    while !input.is_done() {}
 }
