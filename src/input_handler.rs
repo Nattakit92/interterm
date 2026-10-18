@@ -1,5 +1,3 @@
-use std::fmt::Alignment::Right;
-
 use crate::input_handler::Key::Letter;
 
 pub struct Buffer{
