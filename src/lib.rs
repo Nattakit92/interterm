@@ -9,9 +9,10 @@ use std::thread;
 
 use crate::termios::Termios;
 use crate::input_handler::Buffer;
+use crate::input_handler::KeyPressed;
 
-pub trait Listener : Fn(&[u8; 16]) + Send + Sync + 'static{}
-impl<T: Fn(&[u8; 16]) + Send + Sync + 'static> Listener for T {}
+pub trait Listener : Fn(&KeyPressed) + Send + Sync + 'static{}
+impl<T: Fn(&KeyPressed) + Send + Sync + 'static> Listener for T {}
 
 pub struct Stopper{
     flag: AtomicBool
@@ -30,8 +31,7 @@ impl Stopper{
 }
 
 pub struct Input<F: Listener>{
-    value: Buffer,
-    history: Vec<String>,
+    value: Option<Buffer>,
     listener: Arc<Mutex<Option<F>>>,
     stopper: Arc<Stopper>,
 }
@@ -58,13 +58,14 @@ impl<F: Listener> Input<F>{
                     break;
                 }
                 let guard = thread_listener.lock().unwrap();
+                let keypressed = KeyPressed::from(buf, n);
                 for l in guard.iter(){
-                    l(&buf);
+                    l(&keypressed);
                 }
             }
         });
 
-        Input{value: Buffer::new(), history: Vec::new(), listener: listener, stopper}
+        Input{value: None, listener: listener, stopper}
     }
 
     pub fn add_listener(&mut self, listener: F){

@@ -1,15 +1,13 @@
 use interterm::Input;
 
-const CTRLC: u128 = 0x3;
-
 fn main(){
     let mut input = Input::new();
     let stopper = input.stopper();
     input.add_listener(move |buf| {
-        if u128::from_be_bytes(buf.clone()) >> 120 == CTRLC{
+        if buf == "CTRL+c"{
             stopper.stop();
         }
-        println!("You type:{:#x}",u128::from_be_bytes(*buf) >> 31);
+        println!("You type:{}",buf.to_string());
     });
     while !input.is_done() {}
 }

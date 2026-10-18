@@ -1,5 +1,6 @@
 use std::io::{self, stdin};
 use std::os::fd::AsRawFd;
+
 #[repr(C)]
 #[derive(Default,Copy,Clone)]
 pub struct Termios{
