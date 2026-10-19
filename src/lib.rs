@@ -35,11 +35,19 @@ pub struct Input<F: Listener>{
     value: Option<Buffer>,
     listener: Arc<Mutex<Option<F>>>,
     stopper: Arc<Stopper>,
+    termios: Termios,
+}
+
+impl<F: Listener> Drop for Input<F>{
+    fn drop(&mut self){
+        _ = Termios::setattr(&mut self.termios);
+    }
 }
 
 impl<F: Listener> Input<F>{
     pub fn new() -> Self {
-        _ = Termios::raw_mode();
+        let original = Termios::new().unwrap();
+        _ = Termios::raw_mode(&mut original.clone());
 
         let listener: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(None));
         let thread_listener = Arc::clone(&listener);
@@ -66,7 +74,7 @@ impl<F: Listener> Input<F>{
             print!("\x1b[<u");
         });
 
-        Input{value: None, listener: listener, stopper}
+        Input{value: None, listener: listener, stopper, termios: original}
     }
 
     pub fn add_listener(&mut self, listener: F){

@@ -3,7 +3,7 @@ use std::os::fd::AsRawFd;
 use crate::os::*;
 
 impl Termios{
-    pub fn raw_mode() -> io::Result<()>{
+    pub fn new() -> io::Result<Self>{
         let mut termios = Termios::default();
         let stdin = stdin();
         let fd = stdin.as_raw_fd();
@@ -13,33 +13,29 @@ impl Termios{
                 return Err(io::Error::last_os_error());
             }
         }
-
+        Ok(termios)
+    }
+    pub fn raw_mode(termios: &mut Termios) -> io::Result<()>{
         termios.c_lflag &= !(ECHO | ICANON | ISIG);
 
-        unsafe {
-            if tcsetattr(fd, TCSANOW, &mut termios) != 0{
-                return Err(io::Error::last_os_error());
-            }
-        }
+        Self::setattr(termios)?;
+
         Ok(())
     }
-    pub fn timeout_decis(decis: u8) -> io::Result<()>{
-        let mut termios = Termios::default();
-        let stdin = stdin();
-        let fd = stdin.as_raw_fd();
-
-        unsafe {
-            if tcgetattr(fd, &mut termios) != 0{
-                return Err(io::Error::last_os_error());
-            }
-        }
-
-        unsafe {cfmakeraw(&mut termios)}
+    pub fn timeout_decis(decis: u8, termios: &mut Termios) -> io::Result<()>{
+        unsafe {cfmakeraw(termios)}
         termios.c_cc[VMIN] = 0;
         termios.c_cc[VTIME] = decis;
 
+        Self::setattr(termios)?;
+
+        Ok(())
+    }
+    pub fn setattr(termios: &mut Termios) -> io::Result<()>{
+        let stdin = stdin();
+        let fd = stdin.as_raw_fd();
         unsafe {
-            if tcsetattr(fd, TCSANOW, &mut termios) != 0{
+            if tcsetattr(fd, TCSANOW, termios) != 0{
                 return Err(io::Error::last_os_error());
             }
         }
