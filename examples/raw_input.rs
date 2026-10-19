@@ -1,5 +1,6 @@
 use interterm::Input;
 
+
 const CTRLC: u128 = 0x3;
 
 fn main(){
@@ -10,7 +11,7 @@ fn main(){
         if u128::from_be_bytes(buf_raw) >> 120 == CTRLC{
             stopper.stop();
         }
-        println!("You type:{:?}",buf_raw);
+        println!("You type:{:?}",str::from_utf8(&buf_raw));
     });
     while !input.is_done() {}
 }

@@ -20,4 +20,4 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: Run tests
-      run: chmod +x test/helloworld.sh && ./test/helloworld.sh
+      run: chmod +x test/simple_input.sh && ./test/simple_input.sh helloworld
