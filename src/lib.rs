@@ -1,13 +1,14 @@
-mod termios;
+pub mod termios;
+pub mod os;
 mod input_handler;
 
-use std::io::{stdin,Read};
+use std::io::{stdin,stdout,Read,Write};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc,Mutex};
 use std::thread;
 
-use crate::termios::Termios;
+use crate::os::Termios;
 use crate::input_handler::Buffer;
 use crate::input_handler::KeyPressed;
 
@@ -47,10 +48,9 @@ impl<F: Listener> Input<F>{
         let thread_stopper = Arc::clone(&stopper);
 
         thread::spawn(move || {
-            loop{
-                if thread_stopper.is_stopped(){
-                    break;
-                }
+            print!("\x1b[>1u");
+            stdout().flush().unwrap();
+            while !thread_stopper.is_stopped(){
                 let mut buf = [0u8; 16];
                 let n = stdin().read(&mut buf).unwrap();
                 if n == 0{
@@ -63,6 +63,7 @@ impl<F: Listener> Input<F>{
                     l(&keypressed);
                 }
             }
+            print!("\x1b[<u");
         });
 
         Input{value: None, listener: listener, stopper}
