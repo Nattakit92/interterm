@@ -2,7 +2,7 @@ pub mod termios;
 pub mod os;
 mod input_handler;
 
-use std::io::{stdin,stdout,Read,Write};
+use std::io::{stdin,stdout,Read,Write,self};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc,Mutex};
@@ -35,19 +35,23 @@ pub struct Input<F: Listener>{
     value: Option<Buffer>,
     listener: Arc<Mutex<Option<F>>>,
     stopper: Arc<Stopper>,
-    termios: Termios,
+    termios: io::Result<Termios>,
 }
 
 impl<F: Listener> Drop for Input<F>{
     fn drop(&mut self){
-        _ = Termios::setattr(&mut self.termios);
+        if let Ok(original) = self.termios{
+            _ = Termios::setattr(&mut original.clone());
+        }
     }
 }
 
 impl<F: Listener> Input<F>{
     pub fn new() -> Self {
-        let original = Termios::new().unwrap();
-        _ = Termios::raw_mode(&mut original.clone());
+        let original = Termios::new();
+        if let Ok(termios) = original{
+            _ = Termios::raw_mode(&mut termios.clone());
+        }
 
         let listener: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(None));
         let thread_listener = Arc::clone(&listener);
@@ -56,7 +60,6 @@ impl<F: Listener> Input<F>{
         let thread_stopper = Arc::clone(&stopper);
 
         thread::spawn(move || {
-            print!("\x1b[>1u");
             stdout().flush().unwrap();
             while !thread_stopper.is_stopped(){
                 let mut buf = [0u8; 16];
@@ -71,7 +74,6 @@ impl<F: Listener> Input<F>{
                     l(&keypressed);
                 }
             }
-            print!("\x1b[<u");
         });
 
         Input{value: None, listener: listener, stopper, termios: original}
