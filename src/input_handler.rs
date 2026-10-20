@@ -102,10 +102,10 @@ impl PartialEq<str> for KeyPressed{
         let mut modifier = 0;
         let mut key = Key::Undefined;
         for k in other.split('+').map(|s| s.trim()){
-            match k {
-                "CTRL" => modifier |= CTRL,
-                "SHIFT" => modifier |= SHIFT,
-                "ALT" => modifier |= ALT,
+            match k.to_lowercase().as_str() {
+                "ctrl" => modifier |= CTRL,
+                "shift" => modifier |= SHIFT,
+                "alt" => modifier |= ALT,
                 x => key = Key::from(x),
             }
         }

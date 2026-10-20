@@ -4,7 +4,7 @@ fn main(){
     let mut input = Input::new();
     let stopper = input.stopper();
     input.add_listener(move |buf| {
-        if buf == "CTRL+c"{
+        if buf == "CTRL+C"{
             stopper.stop();
         }
         println!("You type:{}",buf.to_string());
