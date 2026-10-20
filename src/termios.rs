@@ -23,7 +23,8 @@ impl Termios{
         Ok(())
     }
     pub fn timeout_decis(decis: u8, termios: &mut Termios) -> io::Result<()>{
-        unsafe {cfmakeraw(termios)}
+
+        termios.c_lflag &= !ICANON;
         termios.c_cc[VMIN] = 0;
         termios.c_cc[VTIME] = decis;
 

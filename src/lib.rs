@@ -1,8 +1,8 @@
-pub mod termios;
-pub mod os;
+mod os;
+mod termios;
 mod input_handler;
 
-use std::io::{stdin,stdout,Read,Write,self};
+use std::io::{self, Error, Read, Write, stdin, stdout};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc,Mutex};
@@ -31,33 +31,49 @@ impl Stopper{
     }
 }
 
-pub struct Input<F: Listener>{
+pub struct Input{
     value: Option<Buffer>,
-    listener: Arc<Mutex<Option<F>>>,
+    listener: Arc<Mutex<Option<Box<dyn Listener>>>>,
     stopper: Arc<Stopper>,
-    termios: io::Result<Termios>,
+    termios: Option<Termios>,
 }
 
-impl<F: Listener> Drop for Input<F>{
+impl Drop for Input{
     fn drop(&mut self){
-        if let Ok(original) = self.termios{
+        if let Some(original) = self.termios{
             _ = Termios::setattr(&mut original.clone());
         }
     }
 }
 
-impl<F: Listener> Input<F>{
+impl Input{
     pub fn new() -> Self {
-        let original = Termios::new();
-        if let Ok(termios) = original{
-            _ = Termios::raw_mode(&mut termios.clone());
+        let original;
+        match Termios::new() {
+            Ok(termios) => original = Some(termios.clone()),
+            Err(_) => original = None
         }
 
-        let listener: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(None));
-        let thread_listener = Arc::clone(&listener);
-
+        let listener = Arc::new(Mutex::new(None));
         let stopper = Arc::new(Stopper::new());
-        let thread_stopper = Arc::clone(&stopper);
+
+
+        Input{value: None, listener: listener, stopper, termios: original}
+    }
+
+    pub fn raw_mode(&self){
+        match self.termios {
+            Some(termios) => _ = Termios::raw_mode(&mut termios.clone()),
+            None => ()
+        }
+    }
+
+    pub fn add_listener<F>(&mut self, listener: F)
+    where
+        F: Listener
+    {
+        let thread_stopper = Arc::clone(&self.stopper);
+        let thread_listener = Arc::clone(&self.listener);
 
         thread::spawn(move || {
             stdout().flush().unwrap();
@@ -76,11 +92,7 @@ impl<F: Listener> Input<F>{
             }
         });
 
-        Input{value: None, listener: listener, stopper, termios: original}
-    }
-
-    pub fn add_listener(&mut self, listener: F){
-        *self.listener.lock().unwrap() = Some(listener);
+        *self.listener.lock().unwrap() = Some(Box::new(listener));
     }
 
     pub fn stopper(&self) -> Arc<Stopper>{
@@ -89,5 +101,13 @@ impl<F: Listener> Input<F>{
 
     pub fn is_done(&self) -> bool{
         self.stopper.is_stopped()
+    }
+
+    /// Sets a read timeout for input operations in deciseconds (1/10 of a second).
+    pub fn set_read_timeout(&self, decisec: u8) -> io::Result<()>{
+        match self.termios {
+            Some(termios) => Termios::timeout_decis(decisec, &mut termios.clone()),
+            None => Err(Error::new(io::ErrorKind::Other, "Cannot set read timeout"))
+        }
     }
 }

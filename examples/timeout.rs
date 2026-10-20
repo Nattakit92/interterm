@@ -1,14 +1,18 @@
-use std::io::{self, Read};
-use interterm::os::Termios;
+use std::io;
+use interterm::Input;
 
 fn main() -> io::Result<()>{
-    let mut original = Termios::new()?;
-    Termios::timeout_decis(10, &mut original.clone())?;
-    let mut buffer = [0u8; 32];
 
-    match io::stdin().read(&mut buffer) {
+    let input = Input::new();
+    input.set_read_timeout(10)?;
+
+    let mut s = String::new();
+
+    println!("You have 1 second type something:");
+
+    match io::stdin().read_line(&mut s) {
         Ok(n) if n > 0 => {
-            println!("\nReceived {} byte(s): {:?}", n, &buffer[..n]);
+            println!("\nReceived {} byte(s): {:?}", n, s);
         }
         Ok(_) => {
             println!("\nTimeout reached! No input received.");
@@ -17,6 +21,5 @@ fn main() -> io::Result<()>{
             eprintln!("\nError reading input: {}", e);
         }
     }
-    Termios::setattr(&mut original)?;
     Ok(())
 }
