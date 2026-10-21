@@ -46,7 +46,8 @@ const SUPER: u8 = 0b1000;
 enum Key{
     Letter(char), Function(u8),
     Up, Down, Left, Right,
-    Enter, Backspace, Delete, Tabs, Escape,
+    Enter, Backspace, Tabs, Escape,
+    Home, Insert, Delete, End, PgUp, PgDown,
     Undefined
 }
 
@@ -57,6 +58,11 @@ impl Key {
         if let (Some(c), None) = (s_chars.next(),s_chars.next()){
             return Key::Letter(c);
         }
+        if let Some(x) = s.strip_prefix('f').or_else(|| s.strip_prefix('F')){
+            if let Ok(i) = x.parse::<u8>() && i <= 20{
+                return Key::Function(i);
+            }
+        }
 
         match s.to_lowercase().as_str() {
             "up" => Key::Up,
@@ -64,9 +70,19 @@ impl Key {
             "left" => Key::Left,
             "right" => Key::Right,
             "enter" => Key::Enter,
+            "return" => Key::Enter,
             "backspace" => Key::Backspace,
-            "delete" => Key::Delete,
             "tabs" => Key::Tabs,
+            "escape" => Key::Escape,
+            "home" => Key::Home,
+            "insert" => Key::Insert,
+            "delete" => Key::Delete,
+            "del" => Key::Delete,
+            "end" => Key::End,
+            "pgup" => Key::PgUp,
+            "pageup" => Key::PgUp,
+            "pgdown" => Key::PgDown,
+            "pagedown" => Key::PgDown,
             _ => Key::Undefined
         }
     }
@@ -84,9 +100,14 @@ impl ToString for Key{
             &Right => "Right".to_string(),
             &Enter => "Enter".to_string(),
             &Backspace => "Backspace".to_string(),
-            &Delete => "Delete".to_string(),
             &Tabs => "Tabs".to_string(),
             &Escape => "Escape".to_string(),
+            &Home => "Home".to_string(),
+            &Insert => "Insert".to_string(),
+            &Delete => "Delete".to_string(),
+            &End => "End".to_string(),
+            &PgUp => "PgUp".to_string(),
+            &PgDown => "PgDown".to_string(),
             &Undefined => "Unknown".to_string(),
         }
     }
@@ -104,9 +125,10 @@ impl PartialEq<str> for KeyPressed{
         let mut key = Key::Undefined;
         for k in other.split('+').map(|s| s.trim()){
             match k.to_uppercase().as_str() {
-                "CTRL" => modifier |= CTRL,
+                "CTRL" | "CMD" => modifier |= CTRL,
                 "SHIFT" => modifier |= SHIFT,
-                "ALT" => modifier |= ALT,
+                "ALT" | "OPTION" => modifier |= ALT,
+                "SUPER" | "META" => modifier |= SUPER,
                 x => key = Key::from(x),
             }
         }
@@ -125,6 +147,9 @@ impl<'a> ToString for KeyPressed{
         }
         if self.modifier & ALT != 0{
             result += "ALT+"
+        }
+        if self.modifier & SUPER != 0{
+            result += "SUPER+"
         }
         result += &self.key.to_string();
         result
