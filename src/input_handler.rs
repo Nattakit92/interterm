@@ -1,5 +1,3 @@
-use crate::input_handler::Key::Letter;
-
 pub struct Buffer{
     data: Vec<String>,
     history: Vec<String>,
@@ -39,15 +37,16 @@ impl From<String> for Buffer{
     }
 }
 
-const CTRL: u8 = 0b1;
-const SHIFT: u8 = 0b10;
-const ALT: u8 = 0b100;
+const SHIFT: u8 = 0b0001;
+const ALT:   u8 = 0b0010;
+const CTRL:  u8 = 0b0100;
+const SUPER: u8 = 0b1000;
 
 #[derive(PartialEq)]
 enum Key{
-    Letter(char),
+    Letter(char), Function(u8),
     Up, Down, Left, Right,
-    Enter, Backspace, Delete, Tabs,
+    Enter, Backspace, Delete, Tabs, Escape,
     Undefined
 }
 
@@ -56,7 +55,7 @@ impl Key {
 
         let mut s_chars = s.chars();
         if let (Some(c), None) = (s_chars.next(),s_chars.next()){
-            return Letter(c);
+            return Key::Letter(c);
         }
 
         match s.to_lowercase().as_str() {
@@ -78,6 +77,7 @@ impl ToString for Key{
         use Key::*;
         match self {
             &Letter(c) => c.to_string(),
+            &Function(x) => format!("F{}",x),
             &Up => "Up".to_string(),
             &Down => "Down".to_string(),
             &Left => "Left".to_string(),
@@ -86,13 +86,14 @@ impl ToString for Key{
             &Backspace => "Backspace".to_string(),
             &Delete => "Delete".to_string(),
             &Tabs => "Tabs".to_string(),
+            &Escape => "Escape".to_string(),
             &Undefined => "Unknown".to_string(),
         }
     }
 }
 
 pub struct KeyPressed{
-    raw: [u8; 16],
+    raw: String,
     modifier: u8,
     key: Key
 }
@@ -102,10 +103,10 @@ impl PartialEq<str> for KeyPressed{
         let mut modifier = 0;
         let mut key = Key::Undefined;
         for k in other.split('+').map(|s| s.trim()){
-            match k.to_lowercase().as_str() {
-                "ctrl" => modifier |= CTRL,
-                "shift" => modifier |= SHIFT,
-                "alt" => modifier |= ALT,
+            match k.to_uppercase().as_str() {
+                "CTRL" => modifier |= CTRL,
+                "SHIFT" => modifier |= SHIFT,
+                "ALT" => modifier |= ALT,
                 x => key = Key::from(x),
             }
         }
@@ -113,7 +114,7 @@ impl PartialEq<str> for KeyPressed{
     }
 }
 
-impl ToString for KeyPressed{
+impl<'a> ToString for KeyPressed{
     fn to_string(&self) -> String {
         let mut result = String::new();
         if self.modifier & CTRL != 0{
@@ -131,26 +132,106 @@ impl ToString for KeyPressed{
 }
 
 impl KeyPressed{
-    pub fn from(raw: [u8; 16], n: usize) -> Self{
+    fn undefined(raw: String) -> Self{
+        Self { raw, modifier: 0, key: Key::Undefined }
+    }
+    pub fn from(raw_arr: [u8; 16], n: usize) -> Self{
+        let raw;
+        match str::from_utf8(&raw_arr[..n]) {
+            Ok(x) => raw = x.to_string(),
+            Err(_) => return Self::undefined(String::new())
+        }
+        if !str_has_control(&raw){
+            if n == 1{
+                let key = Key::Letter(raw.chars().next().unwrap());
+                return KeyPressed { raw, modifier: 0, key };
+            }
+            return Self::undefined(raw);
+        }
         let mut modifier = 0;
-        let mut key = Key::Undefined;
-        match n {
-            1 if raw[0] < 32 => {
-                modifier = CTRL;
-                key = Key::Letter((raw[0]+96) as char);
-            },
-            1 if raw[0] == 128 => {
-                key = Key::Backspace;
-            },
-            x if x<=4 => {
-                let s = std::str::from_utf8(&raw).unwrap();
-                key = Key::Letter(char::from(s.chars().next().unwrap()))
+        let key;
+        let mut i = 0;
+
+        match raw_arr[0] {
+            //escape code
+            b'\x1b' => {
+                i = 1;
+                if n==1{
+                    return KeyPressed { raw, modifier:0, key: Key::Escape };
+                }
+                modifier |= ALT;
             },
             _ => ()
         }
-        KeyPressed{raw, modifier, key}
+
+        match raw_arr[i] {
+            b'\n' => key = Key::Enter,
+            b'\t' => key = Key::Tabs,
+
+            // CSI sequence
+            b'[' if modifier & ALT != 0 => {
+                modifier &= !ALT;
+                i = 2;
+                let csi: Vec<&[u8]> = raw_arr[i..n].split(|x| *x==b';').collect();
+                match csi[csi.len()-1] {
+                    // vt sequence
+                    x if x[x.len()-1] == b'~' => {
+                        // let key_code;
+                        todo!()
+                    }
+                    // xterm sequence
+                    x => match x[x.len()-1] {
+                        b'A' => key = Key::Up,
+                        b'B' => key = Key::Down,
+                        b'C' => key = Key::Right,
+                        b'D' => key = Key::Left,
+                        b'P' => key = Key::Function(1),
+                        b'Q' => key = Key::Function(2),
+                        b'R' => key = Key::Function(3),
+                        b'S' => key = Key::Function(4),
+                        _ => return Self::undefined(raw)
+                    }
+                }
+            }
+
+            // xterm sequence
+            b'O' if i+1!=n => {
+                if modifier & ALT == 0{
+                    return Self::undefined(raw);
+                }
+                modifier &= !ALT;
+                i = 2;
+                match raw_arr[i] {
+                    b'P' => key = Key::Function(1),
+                    b'Q' => key = Key::Function(2),
+                    b'R' => key = Key::Function(3),
+                    b'S' => key = Key::Function(4),
+                    _ => return Self::undefined(raw)
+                }
+            }
+
+            0x8 => {
+                modifier |= CTRL;
+                key = Key::Backspace;
+            }
+            0x7f => key = Key::Backspace,
+
+            1..=26 => {
+                modifier |= CTRL;
+                key = Key::Letter((raw_arr[i]+64) as char);
+            },
+            x if x.is_ascii() => key = Key::Letter(x as char),
+
+            _ => return Self::undefined(raw)
+        }
+        Self { raw, modifier, key }
     }
-    pub fn get_raw(&self) -> [u8; 16]{
-        self.raw
+
+    pub fn get_raw(&self) -> &str{
+        &self.raw
     }
+}
+
+fn str_has_control(s: &str) -> bool{
+    s.chars().any(|c| c.is_control())
 }
