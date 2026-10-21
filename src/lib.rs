@@ -12,8 +12,10 @@ use crate::os::Termios;
 use crate::input_handler::Buffer;
 use crate::input_handler::KeyPressed;
 
-pub trait Listener : Fn(&KeyPressed) + Send + Sync + 'static{}
-impl<T: Fn(&KeyPressed) + Send + Sync + 'static> Listener for T {}
+pub trait ListenerFn : Fn(&KeyPressed) + Send + Sync + 'static{}
+impl<T: Fn(&KeyPressed) + Send + Sync + 'static> ListenerFn for T {}
+
+pub type Listener = Option<Box<dyn ListenerFn>>;
 
 pub struct Stopper{
     flag: AtomicBool
@@ -31,46 +33,68 @@ impl Stopper{
     }
 }
 
-pub struct Input{
-    value: Option<Buffer>,
-    listener: Arc<Mutex<Option<Box<dyn Listener>>>>,
-    stopper: Arc<Stopper>,
-    termios: Option<Termios>,
+struct TermiosHandler{
+    termios: Termios,
+    original: Termios
 }
 
-impl Drop for Input{
+impl Drop for TermiosHandler{
     fn drop(&mut self){
-        if let Some(original) = self.termios{
-            _ = Termios::setattr(&mut original.clone());
+        _ = Termios::setattr(&mut self.original)
+    }
+}
+
+impl TermiosHandler {
+    fn new() -> Option<Self>{
+        match Termios::new() {
+            Ok(termios) => {
+                Some(TermiosHandler {
+                    termios: termios.clone(),
+                    original: termios
+                })
+            },
+            Err(_) => None
         }
     }
+
+    fn set_read_timeout(&mut self, decisec: u8) -> io::Result<()>{
+        Termios::timeout_decis(decisec, &mut self.termios)
+    }
+
+    fn raw_mode(&mut self) -> io::Result<()>{
+        Termios::raw_mode(&mut self.termios)
+    }
+}
+
+pub struct Input{
+    value: Option<Buffer>,
+    listener: Arc<Mutex<Listener>>,
+    stopper: Arc<Stopper>,
+    termios: Option<TermiosHandler>,
 }
 
 impl Input{
     pub fn new() -> Self {
-        let original;
-        match Termios::new() {
-            Ok(termios) => original = Some(termios.clone()),
-            Err(_) => original = None
-        }
+
+        let termios = TermiosHandler::new();
 
         let listener = Arc::new(Mutex::new(None));
         let stopper = Arc::new(Stopper::new());
 
 
-        Input{value: None, listener: listener, stopper, termios: original}
+        Input{value: None, listener: listener, stopper, termios}
     }
 
-    pub fn raw_mode(&self){
-        match self.termios {
-            Some(termios) => _ = Termios::raw_mode(&mut termios.clone()),
-            None => ()
+    pub fn raw_mode(&mut self) -> io::Result<()>{
+        match self.termios.as_mut() {
+            Some(termios) => termios.raw_mode(),
+            None => Err(Error::new(io::ErrorKind::Other, "Cannot set to raw mode"))
         }
     }
 
     pub fn add_listener<F>(&mut self, listener: F)
     where
-        F: Listener
+        F: ListenerFn
     {
         let thread_stopper = Arc::clone(&self.stopper);
         let thread_listener = Arc::clone(&self.listener);
@@ -81,8 +105,7 @@ impl Input{
                 let mut buf = [0u8; 16];
                 let n = stdin().read(&mut buf).unwrap();
                 if n == 0{
-                    thread_stopper.stop();
-                    break;
+                    continue;
                 }
                 let guard = thread_listener.lock().unwrap();
                 let keypressed = KeyPressed::from(buf, n);
@@ -104,9 +127,9 @@ impl Input{
     }
 
     /// Sets a read timeout for input operations in deciseconds (1/10 of a second).
-    pub fn set_read_timeout(&self, decisec: u8) -> io::Result<()>{
-        match self.termios {
-            Some(termios) => Termios::timeout_decis(decisec, &mut termios.clone()),
+    pub fn set_read_timeout(&mut self, decisec: u8) -> io::Result<()>{
+        match self.termios.as_mut() {
+            Some(termios) => termios.set_read_timeout(decisec),
             None => Err(Error::new(io::ErrorKind::Other, "Cannot set read timeout"))
         }
     }

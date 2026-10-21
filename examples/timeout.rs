@@ -3,7 +3,7 @@ use interterm::Input;
 
 fn main() -> io::Result<()>{
 
-    let input = Input::new();
+    let mut input = Input::new();
     input.set_read_timeout(10)?;
 
     let mut s = String::new();
