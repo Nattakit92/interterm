@@ -148,7 +148,11 @@ impl<'a> ToString for KeyPressed{
         if self.modifier & SUPER != 0{
             result += "SUPER+"
         }
-        result += &self.key.to_string().to_uppercase();
+        if self.modifier != 0{
+            result += &self.key.to_string().to_uppercase();
+        }else{
+            result += &self.key.to_string();
+        }
         result
     }
 }
