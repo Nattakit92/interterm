@@ -69,20 +69,16 @@ impl Key {
             "down" => Key::Down,
             "left" => Key::Left,
             "right" => Key::Right,
-            "enter" => Key::Enter,
-            "return" => Key::Enter,
+            "enter" | "return" => Key::Enter,
             "backspace" => Key::Backspace,
             "tabs" => Key::Tabs,
             "escape" => Key::Escape,
             "home" => Key::Home,
             "insert" => Key::Insert,
-            "delete" => Key::Delete,
-            "del" => Key::Delete,
+            "del" | "delete" => Key::Delete,
             "end" => Key::End,
-            "pgup" => Key::PgUp,
-            "pageup" => Key::PgUp,
-            "pgdown" => Key::PgDown,
-            "pagedown" => Key::PgDown,
+            "pgup" | "pageup" => Key::PgUp,
+            "pgdown" | "pagedown" => Key::PgDown,
             _ => Key::Undefined
         }
     }
@@ -216,6 +212,12 @@ impl KeyPressed{
                         b'S' => key = Key::Function(4),
                         _ => return Self::undefined(raw)
                     }
+                }
+                if let Some(x) = csi.get(csi.len()-2)
+                    .and_then(|slice| str::from_utf8(slice).ok())
+                    .and_then(|s| s.parse::<u8>().ok())
+                {
+                    modifier = x-1;
                 }
             }
 
