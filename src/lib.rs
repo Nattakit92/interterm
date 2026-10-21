@@ -2,11 +2,11 @@ mod os;
 mod termios;
 mod input_handler;
 
+use std::clone;
 use std::io::{self, Error, Read, Write, stdin, stdout};
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc,Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use crate::os::Termios;
 use crate::input_handler::Buffer;
@@ -91,20 +91,19 @@ impl TermiosHandler {
 pub struct Input{
     value: Option<Buffer>,
     listener: Arc<Mutex<Listener>>,
+    thread_handle: Option<JoinHandle<()>>,
     stopper: Arc<Stopper>,
     termios: Option<TermiosHandler>,
 }
 
 impl Input{
     pub fn new() -> Self {
-
         let termios = TermiosHandler::new();
 
         let listener = Arc::new(Mutex::new(None));
         let stopper = Arc::new(Stopper::new());
 
-
-        Input{value: None, listener: listener, stopper, termios}
+        Input{value: None, thread_handle: None, listener: listener, stopper, termios}
     }
 
     pub fn raw_mode(&mut self) -> io::Result<()>{
@@ -114,14 +113,14 @@ impl Input{
         }
     }
 
-    pub fn add_listener<F>(&mut self, listener: F)
+    pub fn listener<F>(&mut self, listener: F)
     where
         F: ListenerFn
     {
         let thread_stopper = Arc::clone(&self.stopper);
         let thread_listener = Arc::clone(&self.listener);
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             stdout().flush().unwrap();
             while !thread_stopper.is_stopped(){
                 let mut buf = [0u8; 16];
@@ -139,10 +138,17 @@ impl Input{
         });
 
         *self.listener.lock().unwrap() = Some(Box::new(listener));
+        self.thread_handle = Some(handle);
     }
 
     pub fn stopper(&self) -> Arc<Stopper>{
         Arc::clone(&self.stopper)
+    }
+
+    pub fn wait(&mut self){
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
     }
 
     pub fn is_done(&self) -> bool{
@@ -157,7 +163,7 @@ impl Input{
         }
     }
 
-    pub fn supports_kitty_keyboard_protocol(&mut self) -> bool{
+    fn supports_kitty_keyboard_protocol(&mut self) -> bool{
         match self.termios.as_mut() {
             Some(termios) => termios.supports_kitty_keyboard_protocol(),
             None => false
