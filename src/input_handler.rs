@@ -79,6 +79,7 @@ impl Key {
             "end" => Key::End,
             "pgup" | "pageup" => Key::PgUp,
             "pgdown" | "pagedown" => Key::PgDown,
+            "space" | "spacebar" => Key::Letter(' '),
             _ => Key::Undefined
         }
     }
@@ -147,7 +148,7 @@ impl<'a> ToString for KeyPressed{
         if self.modifier & SUPER != 0{
             result += "SUPER+"
         }
-        result += &self.key.to_string();
+        result += &self.key.to_string().to_uppercase();
         result
     }
 }
@@ -156,6 +157,7 @@ impl KeyPressed{
     fn undefined(raw: String) -> Self{
         Self { raw, modifier: 0, key: Key::Undefined }
     }
+
     pub fn from(raw_arr: [u8; 16], n: usize) -> Self{
         let raw;
         match str::from_utf8(&raw_arr[..n]) {
@@ -186,38 +188,73 @@ impl KeyPressed{
         }
 
         match raw_arr[i] {
-            b'\n' => key = Key::Enter,
+            b'\n' | b'\r' => key = Key::Enter,
             b'\t' => key = Key::Tabs,
 
             // CSI sequence
             b'[' if modifier & ALT != 0 => {
-                modifier &= !ALT;
                 i = 2;
                 let csi: Vec<&[u8]> = raw_arr[i..n].split(|x| *x==b';').collect();
-                match csi[csi.len()-1] {
+                key = match csi[csi.len()-1] {
                     // vt sequence
                     x if x[x.len()-1] == b'~' => {
-                        // let key_code;
-                        todo!()
+                        let key_code: Option<u8>;
+                        match csi.len() {
+                            1 => key_code = csi.get(0)
+                                .and_then(|slice| arr_to_u8(&slice[..=slice.len()-2])),
+                            2 => key_code = csi.get(0)
+                                .and_then(|slice| arr_to_u8(*slice)),
+                            // xterm sequence
+                            3 => return Self::undefined(raw),
+                            _ => return Self::undefined(raw),
+                        }
+                        if key_code.is_none(){
+                            return Self::undefined(raw);
+                        }
+                        match key_code.unwrap() {
+                            1 | 7 => Key::Home,
+                            2 => Key::Insert,
+                            3 => Key::Delete,
+                            4 | 8 => Key::End,
+                            5 => Key::PgUp,
+                            6 => Key::PgDown,
+                            x if (10..=15).contains(&x) => Key::Function(x-10),
+                            x if (17..=21).contains(&x) => Key::Function(x-11),
+                            x if (23..=26).contains(&x) => Key::Function(x-12),
+                            x if (28..=29).contains(&x) => Key::Function(x-13),
+                            x if (31..=34).contains(&x) => Key::Function(x-14),
+                            _ => return Self::undefined(raw),
+                        }
                     }
                     // xterm sequence
                     x => match x[x.len()-1] {
-                        b'A' => key = Key::Up,
-                        b'B' => key = Key::Down,
-                        b'C' => key = Key::Right,
-                        b'D' => key = Key::Left,
-                        b'P' => key = Key::Function(1),
-                        b'Q' => key = Key::Function(2),
-                        b'R' => key = Key::Function(3),
-                        b'S' => key = Key::Function(4),
+                        b'A' => Key::Up,
+                        b'B' => Key::Down,
+                        b'C' => Key::Right,
+                        b'D' => Key::Left,
+                        b'F' => Key::End,
+                        b'H' => Key::Home,
+                        b'P' => Key::Function(1),
+                        b'Q' => Key::Function(2),
+                        b'R' => Key::Function(3),
+                        b'S' => Key::Function(4),
+                        b'u' => {
+                            if let Some(c) = csi.get(csi.len()-2)
+                                .and_then(|slice| arr_to_u8(*slice))
+                            {
+                                Key::Letter(c as char)
+                            }
+                            else { return Self::undefined(raw); }
+                        }
                         _ => return Self::undefined(raw)
                     }
-                }
-                if let Some(x) = csi.get(csi.len()-2)
-                    .and_then(|slice| str::from_utf8(slice).ok())
-                    .and_then(|s| s.parse::<u8>().ok())
+                };
+                if csi.len() > 1 && let Some(x) = csi.get(csi.len()-1)
+                    .and_then(|slice| arr_to_u8(&slice[..=slice.len()-2]))
                 {
                     modifier = x-1;
+                } else {
+                    modifier = 0;
                 }
             }
 
@@ -228,13 +265,13 @@ impl KeyPressed{
                 }
                 modifier &= !ALT;
                 i = 2;
-                match raw_arr[i] {
-                    b'P' => key = Key::Function(1),
-                    b'Q' => key = Key::Function(2),
-                    b'R' => key = Key::Function(3),
-                    b'S' => key = Key::Function(4),
+                key = match raw_arr[i] {
+                    b'P' => Key::Function(1),
+                    b'Q' => Key::Function(2),
+                    b'R' => Key::Function(3),
+                    b'S' => Key::Function(4),
                     _ => return Self::undefined(raw)
-                }
+                };
             }
 
             0x8 => {
@@ -257,6 +294,18 @@ impl KeyPressed{
     pub fn get_raw(&self) -> &str{
         &self.raw
     }
+}
+
+fn arr_to_u8(arr: &[u8]) -> Option<u8>{
+    let mut result: u8 = 0;
+    for byte in arr{
+        if !byte.is_ascii_digit(){
+            return None;
+        }
+        result *= 10;
+        result += byte - b'0';
+    }
+    Some(result)
 }
 
 fn str_has_control(s: &str) -> bool{
