@@ -64,6 +64,28 @@ impl TermiosHandler {
     fn raw_mode(&mut self) -> io::Result<()>{
         Termios::raw_mode(&mut self.termios)
     }
+
+    fn supports_kitty_keyboard_protocol(&mut self) -> bool{
+        let mut temp = self.termios.clone();
+        if Termios::raw_mode(&mut temp).is_err() || Termios::timeout_decis(1, &mut temp).is_err(){
+            _ = Termios::setattr(&mut self.termios);
+            return false;
+        }
+        print!("\x1b[?u");
+        if io::stdout().flush().is_err(){
+            _ = Termios::setattr(&mut self.termios);
+            return false;
+        }
+
+        let mut _s = String::new();
+        let result: bool;
+        match io::stdin().read_line(&mut _s) {
+            Ok(n) if n > 0 => result = true,
+            _ => result = false
+        }
+        _ = Termios::setattr(&mut self.termios);
+        result
+    }
 }
 
 pub struct Input{
@@ -131,6 +153,13 @@ impl Input{
         match self.termios.as_mut() {
             Some(termios) => termios.set_read_timeout(decisec),
             None => Err(Error::new(io::ErrorKind::Other, "Cannot set read timeout"))
+        }
+    }
+
+    pub fn supports_kitty_keyboard_protocol(&mut self) -> bool{
+        match self.termios.as_mut() {
+            Some(termios) => termios.supports_kitty_keyboard_protocol(),
+            None => false
         }
     }
 }
