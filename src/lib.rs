@@ -127,7 +127,8 @@ impl Input{
                 let mut buf = [0u8; 16];
                 let n = stdin().read(&mut buf).unwrap();
                 if n == 0{
-                    continue;
+                    thread_stopper.stop();
+                    break;
                 }
                 let guard = thread_listener.lock().unwrap();
                 let keypressed = KeyPressed::from(buf, n);
