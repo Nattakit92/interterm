@@ -2,7 +2,6 @@ mod os;
 mod termios;
 mod input_handler;
 
-use std::clone;
 use std::io::{self, Error, Read, Write, stdin, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc,Mutex};
@@ -163,7 +162,7 @@ impl Input{
         }
     }
 
-    fn supports_kitty_keyboard_protocol(&mut self) -> bool{
+    pub fn supports_kitty_keyboard_protocol(&mut self) -> bool{
         match self.termios.as_mut() {
             Some(termios) => termios.supports_kitty_keyboard_protocol(),
             None => false
