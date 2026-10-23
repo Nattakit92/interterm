@@ -43,7 +43,7 @@ const CTRL:  u8 = 0b0100;
 const SUPER: u8 = 0b1000;
 
 #[derive(PartialEq)]
-enum Key{
+enum KeyEvent{
     Letter(char), Function(u8),
     Up, Down, Left, Right,
     Enter, Backspace, Tabs, Escape,
@@ -51,43 +51,43 @@ enum Key{
     Undefined
 }
 
-impl Key {
+impl KeyEvent {
     fn from(s: &str) -> Self{
 
         let mut s_chars = s.chars();
         if let (Some(c), None) = (s_chars.next(),s_chars.next()){
-            return Key::Letter(c);
+            return KeyEvent::Letter(c);
         }
         if let Some(x) = s.strip_prefix('f').or_else(|| s.strip_prefix('F')){
             if let Ok(i) = x.parse::<u8>() && i <= 20{
-                return Key::Function(i);
+                return KeyEvent::Function(i);
             }
         }
 
         match s.to_lowercase().as_str() {
-            "up" => Key::Up,
-            "down" => Key::Down,
-            "left" => Key::Left,
-            "right" => Key::Right,
-            "enter" | "return" => Key::Enter,
-            "backspace" => Key::Backspace,
-            "tabs" => Key::Tabs,
-            "escape" => Key::Escape,
-            "home" => Key::Home,
-            "insert" => Key::Insert,
-            "del" | "delete" => Key::Delete,
-            "end" => Key::End,
-            "pgup" | "pageup" => Key::PgUp,
-            "pgdown" | "pagedown" => Key::PgDown,
-            "space" | "spacebar" => Key::Letter(' '),
-            _ => Key::Undefined
+            "up" => KeyEvent::Up,
+            "down" => KeyEvent::Down,
+            "left" => KeyEvent::Left,
+            "right" => KeyEvent::Right,
+            "enter" | "return" => KeyEvent::Enter,
+            "backspace" => KeyEvent::Backspace,
+            "tabs" => KeyEvent::Tabs,
+            "escape" => KeyEvent::Escape,
+            "home" => KeyEvent::Home,
+            "insert" => KeyEvent::Insert,
+            "del" | "delete" => KeyEvent::Delete,
+            "end" => KeyEvent::End,
+            "pgup" | "pageup" => KeyEvent::PgUp,
+            "pgdown" | "pagedown" => KeyEvent::PgDown,
+            "space" | "spacebar" => KeyEvent::Letter(' '),
+            _ => KeyEvent::Undefined
         }
     }
 }
 
-impl ToString for Key{
+impl ToString for KeyEvent{
     fn to_string(&self) -> String {
-        use Key::*;
+        use KeyEvent::*;
         match self {
             &Letter(c) => c.to_string(),
             &Function(x) => format!("F{}",x),
@@ -110,30 +110,30 @@ impl ToString for Key{
     }
 }
 
-pub struct KeyPressed{
+pub struct Event{
     raw: String,
     modifier: u8,
-    key: Key
+    key: KeyEvent
 }
 
-impl PartialEq<str> for KeyPressed{
+impl PartialEq<str> for Event{
     fn eq(&self, other: &str) -> bool{
         let mut modifier = 0;
-        let mut key = Key::Undefined;
+        let mut key = KeyEvent::Undefined;
         for k in other.split('+').map(|s| s.trim()){
             match k.to_uppercase().as_str() {
                 "CTRL" | "CMD" => modifier |= CTRL,
                 "SHIFT" => modifier |= SHIFT,
                 "ALT" | "OPTION" => modifier |= ALT,
                 "SUPER" | "META" => modifier |= SUPER,
-                x => key = Key::from(x),
+                x => key = KeyEvent::from(x),
             }
         }
         self.modifier == modifier && self.key == key
     }
 }
 
-impl<'a> ToString for KeyPressed{
+impl<'a> ToString for Event{
     fn to_string(&self) -> String {
         let mut result = String::new();
         if self.modifier & CTRL != 0{
@@ -157,9 +157,9 @@ impl<'a> ToString for KeyPressed{
     }
 }
 
-impl KeyPressed{
+impl Event{
     fn undefined(raw: String) -> Self{
-        Self { raw, modifier: 0, key: Key::Undefined }
+        Self { raw, modifier: 0, key: KeyEvent::Undefined }
     }
 
     pub fn from(raw_arr: [u8; 16], n: usize) -> Self{
@@ -170,8 +170,8 @@ impl KeyPressed{
         }
         if !str_has_control(&raw){
             if n == 1{
-                let key = Key::Letter(raw.chars().next().unwrap());
-                return KeyPressed { raw, modifier: 0, key };
+                let key = KeyEvent::Letter(raw.chars().next().unwrap());
+                return Event { raw, modifier: 0, key };
             }
             return Self::undefined(raw);
         }
@@ -184,7 +184,7 @@ impl KeyPressed{
             b'\x1b' => {
                 i = 1;
                 if n==1{
-                    return KeyPressed { raw, modifier:0, key: Key::Escape };
+                    return Event { raw, modifier:0, key: KeyEvent::Escape };
                 }
                 modifier |= ALT;
             },
@@ -192,8 +192,8 @@ impl KeyPressed{
         }
 
         match raw_arr[i] {
-            b'\n' | b'\r' => key = Key::Enter,
-            b'\t' => key = Key::Tabs,
+            b'\n' | b'\r' => key = KeyEvent::Enter,
+            b'\t' => key = KeyEvent::Tabs,
 
             // CSI sequence
             b'[' if modifier & ALT != 0 => {
@@ -210,43 +210,43 @@ impl KeyPressed{
                     // vt sequence
                     x if x == b'~' => {
                         match key_code {
-                            1 | 7 => Key::Home,
-                            2 => Key::Insert,
-                            3 => Key::Delete,
-                            4 | 8 => Key::End,
-                            5 => Key::PgUp,
-                            6 => Key::PgDown,
+                            1 | 7 => KeyEvent::Home,
+                            2 => KeyEvent::Insert,
+                            3 => KeyEvent::Delete,
+                            4 | 8 => KeyEvent::End,
+                            5 => KeyEvent::PgUp,
+                            6 => KeyEvent::PgDown,
                             27 => {
                                 match arr_to_u8(csi[2]) {
-                                    13 => Key::Enter,
+                                    13 => KeyEvent::Enter,
                                     _ => return Self::undefined(raw),
                                 }
                             },
-                            x if (10..=15).contains(&x) => Key::Function(x-10),
-                            x if (17..=21).contains(&x) => Key::Function(x-11),
-                            x if (23..=26).contains(&x) => Key::Function(x-12),
-                            x if (28..=29).contains(&x) => Key::Function(x-13),
-                            x if (31..=34).contains(&x) => Key::Function(x-14),
+                            x if (10..=15).contains(&x) => KeyEvent::Function(x-10),
+                            x if (17..=21).contains(&x) => KeyEvent::Function(x-11),
+                            x if (23..=26).contains(&x) => KeyEvent::Function(x-12),
+                            x if (28..=29).contains(&x) => KeyEvent::Function(x-13),
+                            x if (31..=34).contains(&x) => KeyEvent::Function(x-14),
                             _ => return Self::undefined(raw),
                         }
                     }
                     // xterm sequence
-                    b'A' => Key::Up,
-                    b'B' => Key::Down,
-                    b'C' => Key::Right,
-                    b'D' => Key::Left,
-                    b'F' => Key::End,
-                    b'H' => Key::Home,
-                    b'P' => Key::Function(1),
-                    b'Q' => Key::Function(2),
-                    b'R' => Key::Function(3),
-                    b'S' => Key::Function(4),
+                    b'A' => KeyEvent::Up,
+                    b'B' => KeyEvent::Down,
+                    b'C' => KeyEvent::Right,
+                    b'D' => KeyEvent::Left,
+                    b'F' => KeyEvent::End,
+                    b'H' => KeyEvent::Home,
+                    b'P' => KeyEvent::Function(1),
+                    b'Q' => KeyEvent::Function(2),
+                    b'R' => KeyEvent::Function(3),
+                    b'S' => KeyEvent::Function(4),
                     b'u' => {
                         let c = arr_to_u8(csi[csi.len()-2]) as char;
                         if !c.is_ascii_alphabetic(){
                             return Self::undefined(raw);
                         }
-                        Key::Letter(c)
+                        KeyEvent::Letter(c)
                     }
                     _ => return Self::undefined(raw)
                 };
@@ -260,25 +260,25 @@ impl KeyPressed{
                 modifier &= !ALT;
                 i = 2;
                 key = match raw_arr[i] {
-                    b'P' => Key::Function(1),
-                    b'Q' => Key::Function(2),
-                    b'R' => Key::Function(3),
-                    b'S' => Key::Function(4),
+                    b'P' => KeyEvent::Function(1),
+                    b'Q' => KeyEvent::Function(2),
+                    b'R' => KeyEvent::Function(3),
+                    b'S' => KeyEvent::Function(4),
                     _ => return Self::undefined(raw)
                 };
             }
 
             0x8 => {
                 modifier |= CTRL;
-                key = Key::Backspace;
+                key = KeyEvent::Backspace;
             }
-            0x7f => key = Key::Backspace,
+            0x7f => key = KeyEvent::Backspace,
 
             1..=26 => {
                 modifier |= CTRL;
-                key = Key::Letter((raw_arr[i]+64) as char);
+                key = KeyEvent::Letter((raw_arr[i]+64) as char);
             },
-            x if x.is_ascii() => key = Key::Letter(x as char),
+            x if x.is_ascii() => key = KeyEvent::Letter(x as char),
 
             _ => return Self::undefined(raw)
         }

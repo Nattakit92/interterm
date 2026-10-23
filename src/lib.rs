@@ -1,4 +1,4 @@
-mod os;
+pub mod os;
 mod termios;
 mod input_handler;
 
@@ -9,12 +9,12 @@ use std::thread::{self, JoinHandle};
 
 use crate::os::Termios;
 use crate::input_handler::Buffer;
-use crate::input_handler::KeyPressed;
+use crate::input_handler::Event;
 
-pub trait ListenerFn : Fn(&KeyPressed) + Send + Sync + 'static{}
-impl<T: Fn(&KeyPressed) + Send + Sync + 'static> ListenerFn for T {}
+pub trait ListenerFn : Fn(&Event) + Send + Sync + 'static{}
+impl<T: Fn(&Event) + Send + Sync + 'static> ListenerFn for T {}
 
-pub type Listener = Option<Box<dyn ListenerFn>>;
+pub type Listener = Vec<Box<dyn ListenerFn>>;
 
 pub struct Stopper{
     flag: AtomicBool
@@ -99,7 +99,7 @@ impl Input{
     pub fn new() -> Self {
         let termios = TermiosHandler::new();
 
-        let listener = Arc::new(Mutex::new(None));
+        let listener = Arc::new(Mutex::new(Vec::new()));
         let stopper = Arc::new(Stopper::new());
 
         Input{value: None, thread_handle: None, listener: listener, stopper, termios}
@@ -129,14 +129,14 @@ impl Input{
                     break;
                 }
                 let guard = thread_listener.lock().unwrap();
-                let keypressed = KeyPressed::from(buf, n);
+                let keypressed = Event::from(buf, n);
                 for l in guard.iter(){
                     l(&keypressed);
                 }
             }
         });
 
-        *self.listener.lock().unwrap() = Some(Box::new(listener));
+        self.listener.lock().unwrap().push(Box::new(listener));
         self.thread_handle = Some(handle);
     }
 

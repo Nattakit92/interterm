@@ -6,8 +6,8 @@ fn main() -> io::Result<()>{
     let mut input = Input::new();
     input.raw_mode()?;
     let stopper = input.stopper();
-    input.listener(move |buf| {
-        let buf_raw = buf.get_raw();
+    input.listener(move |event| {
+        let buf_raw = event.get_raw();
         if buf_raw == "\u{3}"{
             stopper.stop();
         }
