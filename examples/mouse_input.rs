@@ -1,12 +1,12 @@
 use std::io::{self, Write};
 
-use interterm::Input;
+use interterm::{Input,MouseMode};
 
 fn main() -> io::Result<()>{
     let mut input = Input::new();
-    print!("\x1b[?1002h\x1b[?1006h");
     io::stdout().flush()?;
     input.raw_mode()?;
+    input.set_mouse_mode(MouseMode::Clicks)?;
     let stopper = input.stopper();
     input.listener(move |buf| {
         let buf_raw = buf.get_raw();
@@ -16,6 +16,5 @@ fn main() -> io::Result<()>{
         println!("You type:{:?}",buf_raw);
     });
     input.wait();
-    print!("\x1b[?1002l\x1b[?1006l");
     Ok(())
 }

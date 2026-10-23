@@ -8,7 +8,7 @@ use std::sync::{Arc,Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::os::Termios;
-use crate::input_handler::Buffer;
+use crate::input_handler::{Buffer, RawInputBuffer};
 use crate::input_handler::Event;
 
 pub trait ListenerFn : Fn(&Event) + Send + Sync + 'static{}
@@ -87,12 +87,30 @@ impl TermiosHandler {
     }
 }
 
+pub enum MouseMode{
+    /// Mouse input is disable
+    Disable,
+    /// Only capture click events
+    Clicks,
+    /// Capture click and drag events
+    Drag,
+    /// Capture click, drag and movement events
+    Everything
+}
+
 pub struct Input{
     value: Option<Buffer>,
     listener: Arc<Mutex<Listener>>,
     thread_handle: Option<JoinHandle<()>>,
     stopper: Arc<Stopper>,
     termios: Option<TermiosHandler>,
+}
+
+impl Drop for Input{
+    fn drop(&mut self) {
+        _ = self.set_mouse_mode(MouseMode::Disable);
+        self.stopper().stop();
+    }
 }
 
 impl Input{
@@ -122,7 +140,7 @@ impl Input{
         let handle = thread::spawn(move || {
             stdout().flush().unwrap();
             while !thread_stopper.is_stopped(){
-                let mut buf = [0u8; 16];
+                let mut buf: RawInputBuffer = Default::default();
                 let n = stdin().read(&mut buf).unwrap();
                 if n == 0{
                     thread_stopper.stop();
@@ -167,5 +185,17 @@ impl Input{
             Some(termios) => termios.supports_kitty_keyboard_protocol(),
             None => false
         }
+    }
+
+    pub fn set_mouse_mode(&mut self, mode: MouseMode) -> io::Result<()>{
+        let mut stdout = io::stdout().lock();
+        write!(stdout,"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l")?;
+        match mode {
+            MouseMode::Disable => (),
+            MouseMode::Clicks => write!(stdout,"\x1b[?1000h\x1b[?1006h")?,
+            MouseMode::Drag => write!(stdout,"\x1b[?1002h\x1b[?1006h")?,
+            MouseMode::Everything => write!(stdout,"\x1b[?1003h\x1b[?1006h")?,
+        }
+        stdout.flush()
     }
 }

@@ -1,3 +1,5 @@
+pub type RawInputBuffer = [u8;32];
+
 pub struct Buffer{
     data: Vec<String>,
     history: Vec<String>,
@@ -162,7 +164,7 @@ impl Event{
         Self { raw, modifier: 0, key: KeyEvent::Undefined }
     }
 
-    pub fn from(raw_arr: [u8; 16], n: usize) -> Self{
+    pub fn from(raw_arr: RawInputBuffer, n: usize) -> Self{
         let raw;
         match str::from_utf8(&raw_arr[..n]) {
             Ok(x) => raw = x.to_string(),
