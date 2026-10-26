@@ -6,7 +6,7 @@ fn main() -> io::Result<()>{
     let mut input = Input::new();
     io::stdout().flush()?;
     input.raw_mode()?;
-    input.set_mouse_mode(MouseMode::Clicks)?;
+    input.set_mouse_mode(MouseMode::Everything)?;
     let stopper = input.stopper();
     input.listener(move |buf| {
         let buf_raw = buf.get_raw();

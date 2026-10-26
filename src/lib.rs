@@ -140,12 +140,31 @@ impl Input{
         let handle = thread::spawn(move || {
             stdout().flush().unwrap();
             while !thread_stopper.is_stopped(){
+                let mut chunk: [u8;8] = Default::default();
                 let mut buf: RawInputBuffer = Default::default();
-                let n = stdin().read(&mut buf).unwrap();
+                let mut n = stdin().read(&mut chunk).unwrap();
                 if n == 0{
                     thread_stopper.stop();
                     break;
                 }
+                if chunk[0] == 27{
+                    loop{
+                        if n==0{
+                            break;
+                        }
+                        match chunk[n-1] {
+                            x if x.is_ascii_alphabetic() || x == b'~' => {
+                                buf.extend_from_slice(&chunk[..n]);
+                                break;
+                            },
+                            _ => buf.extend_from_slice(&chunk[..n]),
+                        }
+                        n = stdin().read(&mut chunk).unwrap();
+                    }
+                }else{
+                    buf.extend_from_slice(&chunk[..n]);
+                }
+                n = buf.len();
                 let guard = thread_listener.lock().unwrap();
                 let keypressed = Event::from(buf, n);
                 for l in guard.iter(){

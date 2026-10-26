@@ -1,4 +1,4 @@
-pub type RawInputBuffer = [u8;32];
+pub type RawInputBuffer = Vec<u8>;
 
 pub struct Buffer{
     data: Vec<String>,
