@@ -101,7 +101,7 @@ pub enum MouseMode{
 pub struct Input{
     value: Option<Buffer>,
     listener: Arc<Mutex<Listener>>,
-    thread_handle: Option<JoinHandle<()>>,
+    thread_handle: Option<JoinHandle<Result<(), Error>>>,
     stopper: Arc<Stopper>,
     termios: Option<TermiosHandler>,
 }
@@ -137,12 +137,16 @@ impl Input{
         let thread_stopper = Arc::clone(&self.stopper);
         let thread_listener = Arc::clone(&self.listener);
 
-        let handle = thread::spawn(move || {
+        let handle: JoinHandle<Result<(), Error>> = thread::spawn(move || {
             stdout().flush().unwrap();
             while !thread_stopper.is_stopped(){
                 let mut chunk: [u8;8] = Default::default();
                 let mut buf: RawInputBuffer = Default::default();
-                let mut n = stdin().read(&mut chunk).unwrap();
+                let mut n ;
+                match stdin().read(&mut chunk) {
+                    Ok(x) => n=x,
+                    Err(e) => return Err(e),
+                };
                 if n == 0{
                     thread_stopper.stop();
                     break;
@@ -171,6 +175,7 @@ impl Input{
                     l(&keypressed);
                 }
             }
+            Ok(())
         });
 
         self.listener.lock().unwrap().push(Box::new(listener));
@@ -181,10 +186,18 @@ impl Input{
         Arc::clone(&self.stopper)
     }
 
-    pub fn wait(&mut self){
+    pub fn wait(&mut self) -> Result<(), Error>{
         if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
+            match handle.join() {
+                Ok(x) => {
+                    if x.is_err(){
+                        return Err(x.err().unwrap());
+                    }
+                },
+                Err(_) => return Err(Error::new(io::ErrorKind::Other, "Join error"))
+            }
         }
+        Ok(())
     }
 
     pub fn is_done(&self) -> bool{
