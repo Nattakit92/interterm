@@ -1,6 +1,8 @@
+use std::io;
+
 use interterm::Input;
 
-fn main(){
+fn main() -> io::Result<()>{
     let mut input = Input::new();
     let stopper = input.stopper();
     _ = input.raw_mode();
@@ -10,5 +12,5 @@ fn main(){
         }
         println!("You type:{}",event.to_string());
     });
-    input.wait();
+    input.wait()
 }

@@ -15,6 +15,5 @@ fn main() -> io::Result<()>{
         }
         println!("You type:{:?}",buf_raw);
     });
-    input.wait();
-    Ok(())
+    input.wait()
 }
