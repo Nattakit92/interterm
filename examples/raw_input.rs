@@ -4,7 +4,7 @@ use interterm::Input;
 
 fn main() -> io::Result<()>{
     let mut input = Input::new();
-    input.raw_mode()?;
+    _ = input.raw_mode();
     let stopper = input.stopper();
     input.listener(move |event| {
         let buf_raw = event.get_raw();

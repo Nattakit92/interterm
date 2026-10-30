@@ -140,7 +140,7 @@ impl Input{
         let handle: JoinHandle<Result<(), Error>> = thread::spawn(move || {
             stdout().flush().unwrap();
             while !thread_stopper.is_stopped(){
-                let mut chunk: [u8;8] = Default::default();
+                let mut chunk: [u8; 24] = Default::default();
                 let mut buf: RawInputBuffer = Default::default();
                 let mut n ;
                 match stdin().read(&mut chunk) {
