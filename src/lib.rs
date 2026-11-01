@@ -140,13 +140,10 @@ impl Input{
         let handle: JoinHandle<Result<(), Error>> = thread::spawn(move || {
             stdout().flush().unwrap();
             while !thread_stopper.is_stopped(){
-                let mut chunk: [u8; 24] = Default::default();
+                let mut chunk: [u8; 8] = Default::default();
                 let mut buf: RawInputBuffer = Default::default();
                 let mut n ;
-                match stdin().read(&mut chunk) {
-                    Ok(x) => n=x,
-                    Err(e) => return Err(e),
-                };
+                n = stdin().read(&mut chunk)?;
                 if n == 0{
                     thread_stopper.stop();
                     break;
@@ -165,14 +162,41 @@ impl Input{
                         }
                         n = stdin().read(&mut chunk).unwrap();
                     }
+                    n = buf.len();
+                    let guard = thread_listener.lock().unwrap();
+                    let keypressed = Event::from(buf, n);
+                    for l in guard.iter(){
+                        l(&keypressed);
+                    }
                 }else{
-                    buf.extend_from_slice(&chunk[..n]);
-                }
-                n = buf.len();
-                let guard = thread_listener.lock().unwrap();
-                let keypressed = Event::from(buf, n);
-                for l in guard.iter(){
-                    l(&keypressed);
+                    let mut iter = chunk.iter();
+                    while let Some(first) = iter.next(){
+                        let n = match first {
+                            b'\0' => continue,
+                            x if x >> 7 == 0 => 1,
+                            x if x >> 5 == 0b110 => 2,
+                            x if x >> 4 == 0b1110 => 3,
+                            x if x >> 3 == 0b11110 => 4,
+                            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid input")),
+                        };
+                        let mut buf = vec![*first];
+                        for _ in 0..(n - 1) {
+                            if let Some(next_byte) = iter.next().copied() {
+                                buf.push(next_byte);
+                            } else {
+                                let missing_count = n - buf.len();
+                                let mut chunk = vec![0u8; missing_count];
+                                io::stdin().read_exact(&mut chunk)?;
+                                buf.extend(chunk);
+                                break;
+                            }
+                        }
+                        let guard = thread_listener.lock().unwrap();
+                        let keypressed = Event::from(buf, n);
+                        for l in guard.iter(){
+                            l(&keypressed);
+                        }
+                    }
                 }
             }
             Ok(())

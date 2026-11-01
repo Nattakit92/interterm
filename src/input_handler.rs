@@ -48,7 +48,7 @@ const SUPER: u8 = 0b1000;
 enum KeyEvent{
     Letter(char), Function(u8),
     Up, Down, Left, Right,
-    Enter, Backspace, Tabs, Escape,
+    Enter, Backspace, Tabs, Escape, Space,
     Home, Insert, Delete, End, PgUp, PgDown,
     Undefined
 }
@@ -81,7 +81,7 @@ impl KeyEvent {
             "end" => KeyEvent::End,
             "pgup" | "pageup" => KeyEvent::PgUp,
             "pgdown" | "pagedown" => KeyEvent::PgDown,
-            "space" | "spacebar" => KeyEvent::Letter(' '),
+            "space" | "spacebar" => KeyEvent::Space,
             _ => KeyEvent::Undefined
         }
     }
@@ -101,6 +101,7 @@ impl ToString for KeyEvent{
             &Backspace => "Backspace".to_string(),
             &Tabs => "Tabs".to_string(),
             &Escape => "Escape".to_string(),
+            &Space => "Space".to_string(),
             &Home => "Home".to_string(),
             &Insert => "Insert".to_string(),
             &Delete => "Delete".to_string(),
@@ -171,11 +172,8 @@ impl Event{
             Err(_) => return Self::undefined(String::new())
         }
         if !str_has_control(&raw){
-            if n == 1{
-                let key = KeyEvent::Letter(raw.chars().next().unwrap());
-                return Event { raw, modifier: 0, key };
-            }
-            return Self::undefined(raw);
+            let key = KeyEvent::Letter(raw.chars().next().unwrap());
+            return Event { raw, modifier: 0, key };
         }
         let mut modifier = 0;
         let key;
@@ -194,6 +192,7 @@ impl Event{
         }
 
         match raw_arr[i] {
+            b' ' => key = KeyEvent::Space,
             b'\n' | b'\r' => key = KeyEvent::Enter,
             b'\t' => key = KeyEvent::Tabs,
 
@@ -305,5 +304,5 @@ fn arr_to_u8(arr: &[u8]) -> u8{
 }
 
 fn str_has_control(s: &str) -> bool{
-    s.chars().any(|c| c.is_control())
+    s.chars().any(|c| c.is_control() || c == ' ')
 }
