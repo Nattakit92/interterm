@@ -8,14 +8,16 @@ WORD="$1"
 
 output=$(echo "$WORD" | cargo run --example simple_input --quiet 2>/dev/null | tr -d '\0')
 
-expected=$(awk -v word="$WORD" 'BEGIN {
-    for (i = 1; i <= length(word); i++) {
-        c = substr(word, i, 1)
-        if (c == "\n") print "You type:Enter"
-        else if (c == " ") print "You type:Space"
-        else print "You type:"c
-    }
-}')
+expected=""
+while IFS= read -r -n1 c; do
+    if [[ -z "$c" ]]; then
+        expected+=$'You type:Enter\n'
+    elif [[ "$c" == " " ]]; then
+        expected+="You type:Space"$'\n'
+    else
+        expected+="You type:$c"$'\n'
+    fi
+done <<< "$WORD"
 
 if [[ "$output" == *"$expected"* ]]; then
     echo -e "Ok"
