@@ -19,5 +19,19 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
-    - name: Run tests
-      run: chmod +x test/simple_input.sh && ./test/simple_input.sh helloworld
+    - name: Add permision
+      run: chmod +x test/simple_input.sh
+    - name: Test chinese
+      run: ./test/simple_input.sh $(cat test/sample-text/chinese.txt)
+    - name: Test english
+      run: ./test/simple_input.sh $(cat test/sample-text/english.txt)
+    - name: Test french
+      run: ./test/simple_input.sh $(cat test/sample-text/french.txt)
+    - name: Test hindi
+      run: ./test/simple_input.sh $(cat test/sample-text/hindi.txt)
+    - name: Test japanese
+      run: ./test/simple_input.sh $(cat test/sample-text/japanese.txt)
+    - name: Test russia
+      run: ./test/simple_input.sh $(cat test/sample-text/russia.txt)
+    - name: Test thai
+      run: ./test/simple_input.sh $(cat test/sample-text/thai.txt)
