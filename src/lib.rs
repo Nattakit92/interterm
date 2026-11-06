@@ -139,8 +139,9 @@ impl Input{
 
         let handle: JoinHandle<Result<(), Error>> = thread::spawn(move || {
             stdout().flush().unwrap();
+            let mut keypressed = Event::new();
             while !thread_stopper.is_stopped(){
-                let mut chunk: [u8; 8] = Default::default();
+                let mut chunk: [u8; 1024] = [0;1024];
                 let mut buf: RawInputBuffer = Default::default();
                 let mut n ;
                 n = stdin().read(&mut chunk)?;
@@ -164,7 +165,7 @@ impl Input{
                     }
                     n = buf.len();
                     let guard = thread_listener.lock().unwrap();
-                    let keypressed = Event::from(buf, n);
+                    keypressed.update(buf, n);
                     for l in guard.iter(){
                         l(&keypressed);
                     }
@@ -192,7 +193,7 @@ impl Input{
                             }
                         }
                         let guard = thread_listener.lock().unwrap();
-                        let keypressed = Event::from(buf, n);
+                        keypressed.update(buf, n);
                         for l in guard.iter(){
                             l(&keypressed);
                         }

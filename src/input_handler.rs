@@ -39,10 +39,15 @@ impl From<String> for Buffer{
     }
 }
 
-const SHIFT: u8 = 0b0001;
-const ALT:   u8 = 0b0010;
-const CTRL:  u8 = 0b0100;
-const SUPER: u8 = 0b1000;
+const SHIFT:   u8 = 0b0000001;
+const ALT:     u8 = 0b0000010;
+const CTRL:    u8 = 0b0000100;
+const SUPER:   u8 = 0b0001000;
+
+// Mouse only
+const PRESS:   u8 = 0b0010000;
+const RELEASE: u8 = 0b0100000;
+const DRAG:    u8 = 0b1000000;
 
 #[derive(PartialEq)]
 enum KeyEvent{
@@ -53,20 +58,20 @@ enum KeyEvent{
     Undefined
 }
 
-impl KeyEvent {
-    fn from(s: &str) -> Self{
+impl From<&str> for KeyEvent {
+    fn from(value: &str) -> Self{
 
-        let mut s_chars = s.chars();
+        let mut s_chars = value.chars();
         if let (Some(c), None) = (s_chars.next(),s_chars.next()){
             return KeyEvent::Letter(c);
         }
-        if let Some(x) = s.strip_prefix('f').or_else(|| s.strip_prefix('F')){
+        if let Some(x) = value.strip_prefix('f').or_else(|| value.strip_prefix('F')){
             if let Ok(i) = x.parse::<u8>() && i <= 20{
                 return KeyEvent::Function(i);
             }
         }
 
-        match s.to_lowercase().as_str() {
+        match value.to_lowercase().as_str() {
             "up" => KeyEvent::Up,
             "down" => KeyEvent::Down,
             "left" => KeyEvent::Left,
@@ -113,10 +118,90 @@ impl ToString for KeyEvent{
     }
 }
 
+#[derive(PartialEq)]
+enum MouseEvent {
+    LeftClick, RightClick, MiddleClick,
+    ScrollUp, ScrollDown,
+    Undefined
+}
+
+impl From<&str> for MouseEvent {
+    fn from(value: &str) -> Self {
+        match value.to_lowercase().replace([' ', '-'], "").as_str() {
+            "mouseleft" | "click" | "leftclick" | "lmb" | "primary" | "mouse1" => MouseEvent::LeftClick,
+            "mouseright" | "rightclick" | "rmb" | "secondary" | "mouse2" => MouseEvent::RightClick,
+            "mousemiddle" | "middleclick" | "mmb" | "scrollwheel" | "scrollclick" | "mouse3" => MouseEvent::MiddleClick,
+            "scrollup" | "wheelup" => MouseEvent::ScrollUp,
+            "scrolldown" | "wheeldown" => MouseEvent::ScrollDown,
+            _ => MouseEvent::Undefined,
+        }
+    }
+}
+
+impl ToString for MouseEvent{
+    fn to_string(&self) -> String {
+        use MouseEvent::*;
+        match self {
+            LeftClick => "LMB".to_string(),
+            RightClick => "RMB".to_string(),
+            MiddleClick => "MMB".to_string(),
+            ScrollUp => "Scroll-Up".to_string(),
+            ScrollDown => "Scroll-Down".to_string(),
+            Undefined => "Unknown".to_string(),
+        }
+    }
+}
+
+#[derive(PartialEq)]
+enum EventTypes{
+    Keyboard(KeyEvent),
+    Mouse(MouseEvent),
+    None
+}
+
+impl ToString for EventTypes{
+    fn to_string(&self) -> String {
+        match self {
+            Self::None => "Unknown".to_string(),
+            Self::Keyboard(k) => k.to_string(),
+            Self::Mouse(_) => todo!(),
+        }
+    }
+}
+
+impl From<KeyEvent> for EventTypes{
+    fn from(value: KeyEvent) -> Self {
+        Self::Keyboard(value)
+    }
+}
+
+impl From<MouseEvent> for EventTypes{
+    fn from(value: MouseEvent) -> Self {
+        Self::Mouse(value)
+    }
+}
+
+impl From<&str> for EventTypes{
+    fn from(value: &str) -> Self {
+        let key = KeyEvent::from(value);
+        let mouse = MouseEvent::from(value);
+
+        if !matches!(key,KeyEvent::Undefined){
+            return EventTypes::from(key);
+        }
+
+        if !matches!(mouse,MouseEvent::Undefined){
+            return EventTypes::from(mouse);
+        }
+        EventTypes::None
+    }
+}
+
 pub struct Event{
     raw: String,
     modifier: u8,
-    key: KeyEvent
+    key: EventTypes,
+    mouse_pos: Option<(u16,u16)>
 }
 
 impl PartialEq<str> for Event{
@@ -132,7 +217,7 @@ impl PartialEq<str> for Event{
                 x => key = KeyEvent::from(x),
             }
         }
-        self.modifier == modifier && self.key == key
+        self.modifier == modifier && self.key == EventTypes::Keyboard(key)
     }
 }
 
@@ -161,22 +246,26 @@ impl<'a> ToString for Event{
 }
 
 impl Event{
-    fn undefined(raw: String) -> Self{
-        Self { raw, modifier: 0, key: KeyEvent::Undefined }
+    pub fn new() -> Self{
+        Self{ raw: String::new(), modifier: 0, key: EventTypes::None, mouse_pos: None}
     }
 
-    pub fn from(raw_arr: RawInputBuffer, n: usize) -> Self{
-        let raw;
+    pub fn update(&mut self, raw_arr: RawInputBuffer, n: usize){
+        // reset modifier and key pressed
+        self.raw = String::new();
+        self.modifier = 0;
+        self.key = EventTypes::None;
+
         match str::from_utf8(&raw_arr[..n]) {
-            Ok(x) => raw = x.to_string(),
-            Err(_) => return Self::undefined(String::new())
+            Ok(x) => self.raw = x.to_string(),
+            Err(_) => {
+                return;
+            }
         }
-        if !str_has_control(&raw){
-            let key = KeyEvent::Letter(raw.chars().next().unwrap());
-            return Event { raw, modifier: 0, key };
+        if !str_has_control(&self.raw){
+            self.key = EventTypes::from(KeyEvent::Letter(self.raw.chars().next().unwrap()));
+            return;
         }
-        let mut modifier = 0;
-        let key;
         let mut i = 0;
 
         match raw_arr[0] {
@@ -184,110 +273,119 @@ impl Event{
             b'\x1b' => {
                 i = 1;
                 if n==1{
-                    return Event { raw, modifier:0, key: KeyEvent::Escape };
+                    self.key = EventTypes::from(KeyEvent::Escape);
+                    return;
                 }
-                modifier |= ALT;
+                self.modifier |= ALT;
             },
             _ => ()
         }
 
         match raw_arr[i] {
-            b' ' => key = KeyEvent::Space,
-            b'\n' | b'\r' => key = KeyEvent::Enter,
-            b'\t' => key = KeyEvent::Tabs,
+            b' ' => self.key = EventTypes::from(KeyEvent::Space),
+            b'\n' | b'\r' => self.key = EventTypes::from(KeyEvent::Enter),
+            b'\t' => self.key = EventTypes::from(KeyEvent::Tabs),
 
             // CSI sequence
-            b'[' if modifier & ALT != 0 => {
+            b'[' if self.modifier & ALT != 0 => {
                 i = 2;
                 let csi: Vec<&[u8]> = raw_arr[i..n-1].split(|x| *x==b';').collect();
                 let key_code: u8;
                 key_code = arr_to_u8(csi[0]);
                 if let Some(x) = csi.get(1){
-                    modifier = arr_to_u8(*x) - 1;
+                    self.modifier = arr_to_u8(*x) - 1;
                 }else{
-                    modifier = 0;
+                    self.modifier = 0;
                 }
-                key = match raw_arr[n-1] {
+                self.key = match raw_arr[n-1] {
                     // vt sequence
                     x if x == b'~' => {
                         match key_code {
-                            1 | 7 => KeyEvent::Home,
-                            2 => KeyEvent::Insert,
-                            3 => KeyEvent::Delete,
-                            4 | 8 => KeyEvent::End,
-                            5 => KeyEvent::PgUp,
-                            6 => KeyEvent::PgDown,
+                            1 | 7 => EventTypes::from(KeyEvent::Home),
+                            2 => EventTypes::from(KeyEvent::Insert),
+                            3 => EventTypes::from(KeyEvent::Delete),
+                            4 | 8 => EventTypes::from(KeyEvent::End),
+                            5 => EventTypes::from(KeyEvent::PgUp),
+                            6 => EventTypes::from(KeyEvent::PgDown),
                             27 => {
                                 match arr_to_u8(csi[2]) {
-                                    13 => KeyEvent::Enter,
-                                    _ => return Self::undefined(raw),
+                                    13 => EventTypes::from(KeyEvent::Enter),
+                                    _ => return,
                                 }
                             },
-                            x if (10..=15).contains(&x) => KeyEvent::Function(x-10),
-                            x if (17..=21).contains(&x) => KeyEvent::Function(x-11),
-                            x if (23..=26).contains(&x) => KeyEvent::Function(x-12),
-                            x if (28..=29).contains(&x) => KeyEvent::Function(x-13),
-                            x if (31..=34).contains(&x) => KeyEvent::Function(x-14),
-                            _ => return Self::undefined(raw),
+                            x if (10..=15).contains(&x) => EventTypes::from(KeyEvent::Function(x-10)),
+                            x if (17..=21).contains(&x) => EventTypes::from(KeyEvent::Function(x-11)),
+                            x if (23..=26).contains(&x) => EventTypes::from(KeyEvent::Function(x-12)),
+                            x if (28..=29).contains(&x) => EventTypes::from(KeyEvent::Function(x-13)),
+                            x if (31..=34).contains(&x) => EventTypes::from(KeyEvent::Function(x-14)),
+                            _ => return,
                         }
                     }
                     // xterm sequence
-                    b'A' => KeyEvent::Up,
-                    b'B' => KeyEvent::Down,
-                    b'C' => KeyEvent::Right,
-                    b'D' => KeyEvent::Left,
-                    b'F' => KeyEvent::End,
-                    b'H' => KeyEvent::Home,
-                    b'P' => KeyEvent::Function(1),
-                    b'Q' => KeyEvent::Function(2),
-                    b'R' => KeyEvent::Function(3),
-                    b'S' => KeyEvent::Function(4),
+                    b'A' => EventTypes::from(KeyEvent::Up),
+                    b'B' => EventTypes::from(KeyEvent::Down),
+                    b'C' => EventTypes::from(KeyEvent::Right),
+                    b'D' => EventTypes::from(KeyEvent::Left),
+                    b'F' => EventTypes::from(KeyEvent::End),
+                    b'H' => EventTypes::from(KeyEvent::Home),
+                    b'P' => EventTypes::from(KeyEvent::Function(1)),
+                    b'Q' => EventTypes::from(KeyEvent::Function(2)),
+                    b'R' => EventTypes::from(KeyEvent::Function(3)),
+                    b'S' => EventTypes::from(KeyEvent::Function(4)),
                     b'u' => {
                         let c = arr_to_u8(csi[csi.len()-2]) as char;
                         if !c.is_ascii_alphabetic(){
-                            return Self::undefined(raw);
+                            return;
                         }
-                        KeyEvent::Letter(c)
+                        EventTypes::from(KeyEvent::Letter(c))
                     }
-                    _ => return Self::undefined(raw)
+                    // mouse input
+                    b'M' => {
+                        self.mouse_pos = Some((arr_to_u16(csi[1]), arr_to_u16(csi[2])));
+                        EventTypes::from(KeyEvent::Undefined)
+                    },
+                    _ => return
                 };
             }
 
             // xterm sequence
             b'O' if i+1 != n => {
-                if modifier & ALT == 0{
-                    return Self::undefined(raw);
+                if self.modifier & ALT == 0{
+                    return;
                 }
-                modifier &= !ALT;
+                self.modifier &= !ALT;
                 i = 2;
-                key = match raw_arr[i] {
-                    b'P' => KeyEvent::Function(1),
-                    b'Q' => KeyEvent::Function(2),
-                    b'R' => KeyEvent::Function(3),
-                    b'S' => KeyEvent::Function(4),
-                    _ => return Self::undefined(raw)
+                self.key = match raw_arr[i] {
+                    b'P' => EventTypes::from(KeyEvent::Function(1)),
+                    b'Q' => EventTypes::from(KeyEvent::Function(2)),
+                    b'R' => EventTypes::from(KeyEvent::Function(3)),
+                    b'S' => EventTypes::from(KeyEvent::Function(4)),
+                    _ => return
                 };
             }
 
             0x8 => {
-                modifier |= CTRL;
-                key = KeyEvent::Backspace;
+                self.modifier |= CTRL;
+                self.key = EventTypes::from(KeyEvent::Backspace);
             }
-            0x7f => key = KeyEvent::Backspace,
+            0x7f => self.key = EventTypes::from(KeyEvent::Backspace),
 
             1..=26 => {
-                modifier |= CTRL;
-                key = KeyEvent::Letter((raw_arr[i]+64) as char);
+                self.modifier |= CTRL;
+                self.key = EventTypes::from(KeyEvent::Letter((raw_arr[i]+64) as char));
             },
-            x if x.is_ascii() => key = KeyEvent::Letter(x as char),
+            x if x.is_ascii() => self.key = EventTypes::from(KeyEvent::Letter(x as char)),
 
-            _ => return Self::undefined(raw)
+            _ => return
         }
-        Self { raw, modifier, key }
     }
 
     pub fn get_raw(&self) -> &str{
         &self.raw
+    }
+
+    pub fn get_mouse_pos(&self) -> Option<(u16,u16)>{
+        self.mouse_pos
     }
 }
 
@@ -299,6 +397,18 @@ fn arr_to_u8(arr: &[u8]) -> u8{
         }
         result *= 10;
         result += byte - b'0';
+    }
+    result
+}
+
+fn arr_to_u16(arr: &[u8]) -> u16{
+    let mut result: u16 = 0;
+    for byte in arr{
+        if !byte.is_ascii_digit(){
+            return 0;
+        }
+        result *= 10;
+        result += (byte - b'0') as u16;
     }
     result
 }

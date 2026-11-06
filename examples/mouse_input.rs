@@ -14,6 +14,14 @@ fn main() -> io::Result<()>{
             stopper.stop();
         }
         println!("You type:{:?}",buf_raw);
+
+        // let mouse_pos = buf.get_mouse_pos();
+        // if buf == "CTRL+C"{
+        //     stopper.stop();
+        // }
+        // if mouse_pos.is_some(){
+        //     println!("Mouse pos: {},{}",mouse_pos.unwrap().0,mouse_pos.unwrap().1)
+        // }
     });
     input.wait()
 }
