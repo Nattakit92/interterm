@@ -44,11 +44,6 @@ const ALT:     u8 = 0b0000010;
 const CTRL:    u8 = 0b0000100;
 const SUPER:   u8 = 0b0001000;
 
-// Mouse only
-const PRESS:   u8 = 0b0010000;
-const RELEASE: u8 = 0b0100000;
-const DRAG:    u8 = 0b1000000;
-
 #[derive(PartialEq)]
 enum KeyEvent{
     Letter(char), Function(u8),
@@ -125,6 +120,11 @@ enum MouseEvent {
     Undefined
 }
 
+#[derive(PartialEq)]
+enum MouseAction {
+    Press, Release, Drag
+}
+
 impl From<&str> for MouseEvent {
     fn from(value: &str) -> Self {
         match value.to_lowercase().replace([' ', '-'], "").as_str() {
@@ -155,7 +155,7 @@ impl ToString for MouseEvent{
 #[derive(PartialEq)]
 enum EventTypes{
     Keyboard(KeyEvent),
-    Mouse(MouseEvent),
+    Mouse(MouseEvent, MouseAction),
     None
 }
 
@@ -164,7 +164,7 @@ impl ToString for EventTypes{
         match self {
             Self::None => "Unknown".to_string(),
             Self::Keyboard(k) => k.to_string(),
-            Self::Mouse(_) => todo!(),
+            Self::Mouse(_,_) => todo!(),
         }
     }
 }
@@ -175,9 +175,9 @@ impl From<KeyEvent> for EventTypes{
     }
 }
 
-impl From<MouseEvent> for EventTypes{
-    fn from(value: MouseEvent) -> Self {
-        Self::Mouse(value)
+impl From<(MouseEvent,MouseAction)> for EventTypes{
+    fn from(value: (MouseEvent,MouseAction)) -> Self {
+        Self::Mouse(value.0,value.1)
     }
 }
 
@@ -191,7 +191,7 @@ impl From<&str> for EventTypes{
         }
 
         if !matches!(mouse,MouseEvent::Undefined){
-            return EventTypes::from(mouse);
+            return EventTypes::from((mouse,MouseAction::Press));
         }
         EventTypes::None
     }
@@ -200,7 +200,7 @@ impl From<&str> for EventTypes{
 pub struct Event{
     raw: String,
     modifier: u8,
-    key: EventTypes,
+    event: EventTypes,
     mouse_pos: Option<(u16,u16)>
 }
 
@@ -217,7 +217,7 @@ impl PartialEq<str> for Event{
                 x => key = KeyEvent::from(x),
             }
         }
-        self.modifier == modifier && self.key == EventTypes::Keyboard(key)
+        self.modifier == modifier && self.event == EventTypes::Keyboard(key)
     }
 }
 
@@ -237,9 +237,9 @@ impl<'a> ToString for Event{
             result += "SUPER+"
         }
         if self.modifier != 0{
-            result += &self.key.to_string().to_uppercase();
+            result += &self.event.to_string().to_uppercase();
         }else{
-            result += &self.key.to_string();
+            result += &self.event.to_string();
         }
         result
     }
@@ -247,14 +247,14 @@ impl<'a> ToString for Event{
 
 impl Event{
     pub fn new() -> Self{
-        Self{ raw: String::new(), modifier: 0, key: EventTypes::None, mouse_pos: None}
+        Self{ raw: String::new(), modifier: 0, event: EventTypes::None, mouse_pos: None}
     }
 
     pub fn update(&mut self, raw_arr: RawInputBuffer, n: usize){
         // reset modifier and key pressed
         self.raw = String::new();
         self.modifier = 0;
-        self.key = EventTypes::None;
+        self.event = EventTypes::None;
 
         match str::from_utf8(&raw_arr[..n]) {
             Ok(x) => self.raw = x.to_string(),
@@ -263,7 +263,7 @@ impl Event{
             }
         }
         if !str_has_control(&self.raw){
-            self.key = EventTypes::from(KeyEvent::Letter(self.raw.chars().next().unwrap()));
+            self.event = EventTypes::from(KeyEvent::Letter(self.raw.chars().next().unwrap()));
             return;
         }
         let mut i = 0;
@@ -273,7 +273,7 @@ impl Event{
             b'\x1b' => {
                 i = 1;
                 if n==1{
-                    self.key = EventTypes::from(KeyEvent::Escape);
+                    self.event = EventTypes::from(KeyEvent::Escape);
                     return;
                 }
                 self.modifier |= ALT;
@@ -282,9 +282,9 @@ impl Event{
         }
 
         match raw_arr[i] {
-            b' ' => self.key = EventTypes::from(KeyEvent::Space),
-            b'\n' | b'\r' => self.key = EventTypes::from(KeyEvent::Enter),
-            b'\t' => self.key = EventTypes::from(KeyEvent::Tabs),
+            b' ' => self.event = EventTypes::from(KeyEvent::Space),
+            b'\n' | b'\r' => self.event = EventTypes::from(KeyEvent::Enter),
+            b'\t' => self.event = EventTypes::from(KeyEvent::Tabs),
 
             // CSI sequence
             b'[' if self.modifier & ALT != 0 => {
@@ -297,7 +297,7 @@ impl Event{
                 }else{
                     self.modifier = 0;
                 }
-                self.key = match raw_arr[n-1] {
+                self.event = match raw_arr[n-1] {
                     // vt sequence
                     x if x == b'~' => {
                         match key_code {
@@ -355,7 +355,7 @@ impl Event{
                 }
                 self.modifier &= !ALT;
                 i = 2;
-                self.key = match raw_arr[i] {
+                self.event = match raw_arr[i] {
                     b'P' => EventTypes::from(KeyEvent::Function(1)),
                     b'Q' => EventTypes::from(KeyEvent::Function(2)),
                     b'R' => EventTypes::from(KeyEvent::Function(3)),
@@ -366,15 +366,15 @@ impl Event{
 
             0x8 => {
                 self.modifier |= CTRL;
-                self.key = EventTypes::from(KeyEvent::Backspace);
+                self.event = EventTypes::from(KeyEvent::Backspace);
             }
-            0x7f => self.key = EventTypes::from(KeyEvent::Backspace),
+            0x7f => self.event = EventTypes::from(KeyEvent::Backspace),
 
             1..=26 => {
                 self.modifier |= CTRL;
-                self.key = EventTypes::from(KeyEvent::Letter((raw_arr[i]+64) as char));
+                self.event = EventTypes::from(KeyEvent::Letter((raw_arr[i]+64) as char));
             },
-            x if x.is_ascii() => self.key = EventTypes::from(KeyEvent::Letter(x as char)),
+            x if x.is_ascii() => self.event = EventTypes::from(KeyEvent::Letter(x as char)),
 
             _ => return
         }

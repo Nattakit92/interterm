@@ -141,7 +141,7 @@ impl Input{
             stdout().flush().unwrap();
             let mut keypressed = Event::new();
             while !thread_stopper.is_stopped(){
-                let mut chunk: [u8; 1024] = [0;1024];
+                let mut chunk: [u8; 1024] = [0; 1024];
                 let mut buf: RawInputBuffer = Default::default();
                 let mut n ;
                 n = stdin().read(&mut chunk)?;
