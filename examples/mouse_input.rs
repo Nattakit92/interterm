@@ -9,19 +9,20 @@ fn main() -> io::Result<()>{
     input.set_mouse_mode(MouseMode::Everything)?;
     let stopper = input.stopper();
     input.add_listener(move |buf| {
-        let buf_raw = buf.get_raw();
-        if buf_raw == "\u{3}"{
-            stopper.stop();
-        }
-        println!("You type:{:?}",buf_raw);
-
-        // let mouse_pos = buf.get_mouse_pos();
-        // if buf == "CTRL+C"{
+        // let buf_raw = buf.get_raw();
+        // if buf_raw == "\u{3}"{
         //     stopper.stop();
         // }
-        // if mouse_pos.is_some(){
-        //     println!("Mouse pos: {},{}",mouse_pos.unwrap().0,mouse_pos.unwrap().1)
-        // }
+        // println!("You type:{:?}",buf_raw);
+
+        let mouse_pos = buf.get_mouse_pos();
+        if buf == "CTRL+C"{
+            stopper.stop();
+        }
+        println!("{}", buf.to_string());
+        if mouse_pos.is_some(){
+            println!("Mouse pos: {},{}",mouse_pos.unwrap().0,mouse_pos.unwrap().1)
+        }
     });
     input.wait()
 }

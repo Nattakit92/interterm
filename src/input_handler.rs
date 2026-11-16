@@ -1,13 +1,19 @@
+
+
 pub type RawInputBuffer = Vec<u8>;
 pub type Modifier = u8;
 
 pub trait BitflagsExt {
     fn contains(&self, other: Self) -> bool;
+    fn is_empty(&self) -> bool;
 }
 
 impl BitflagsExt for Modifier {
     fn contains(&self, other: Self) -> bool {
         self & other == other
+    }
+    fn is_empty(&self) -> bool {
+        *self == 0
     }
 }
 
@@ -88,13 +94,13 @@ impl ToString for KeyEvent{
 #[derive(PartialEq,Clone)]
 pub enum MouseEvent {
     LeftClick, RightClick, MiddleClick,
-    ScrollUp, ScrollDown,
+    ScrollUp, ScrollDown, Move,
     Undefined
 }
 
 #[derive(PartialEq,Clone)]
 pub enum MouseAction {
-    Press, Release, Drag
+    Press, Release, Drag, Undefined
 }
 
 impl From<&str> for MouseEvent {
@@ -105,6 +111,7 @@ impl From<&str> for MouseEvent {
             "mousemiddle" | "middleclick" | "mmb" | "scrollwheel" | "scrollclick" | "mouse3" => MouseEvent::MiddleClick,
             "scrollup" | "wheelup" => MouseEvent::ScrollUp,
             "scrolldown" | "wheeldown" => MouseEvent::ScrollDown,
+            "move" | "mov" => MouseEvent::Move,
             _ => MouseEvent::Undefined,
         }
     }
@@ -117,9 +124,33 @@ impl ToString for MouseEvent{
             LeftClick => "LMB".to_string(),
             RightClick => "RMB".to_string(),
             MiddleClick => "MMB".to_string(),
+            Move => "Move".to_string(),
             ScrollUp => "Scroll-Up".to_string(),
             ScrollDown => "Scroll-Down".to_string(),
-            Undefined => "Unknown".to_string(),
+            Undefined => String::new(),
+        }
+    }
+}
+
+impl From<&str> for MouseAction{
+    fn from(value: &str) -> Self{
+        match value.to_lowercase().replace([' ', '-'], "").as_str() {
+            "Press" => MouseAction::Press,
+            "Release" => MouseAction::Release,
+            "Drag" => MouseAction::Drag,
+            _ => MouseAction::Undefined
+        }
+    }
+}
+
+impl ToString for MouseAction{
+    fn to_string(&self) -> String {
+        use MouseAction::*;
+        match self {
+            Press => "Press".to_string(),
+            Release => "Release".to_string(),
+            Drag => "Drag".to_string(),
+            Undefined => String::new(),
         }
     }
 }
@@ -136,7 +167,15 @@ impl ToString for EventTypes{
         match self {
             Self::None => "Unknown".to_string(),
             Self::Keyboard(k) => k.to_string(),
-            Self::Mouse(_,_) => todo!(),
+            Self::Mouse(event,action) => {
+                let (event_str, action_str) = (event.to_string(), action.to_string());
+                match (!event_str.is_empty(), !action_str.is_empty()) {
+                    (true, true) => format!("{event_str}-{action_str}"),
+                    (true, false) => event_str.to_string(),
+                    (false, true) => action_str.to_string(),
+                    (false, false) => String::new(),
+                }
+            },
         }
     }
 }
@@ -193,7 +232,7 @@ impl PartialEq<str> for Event{
     }
 }
 
-impl<'a> ToString for Event{
+impl ToString for Event{
     fn to_string(&self) -> String {
         let mut result = String::new();
         if self.modifier.contains(CTRL){
@@ -208,7 +247,7 @@ impl<'a> ToString for Event{
         if self.modifier.contains(SUPER){
             result += "SUPER+"
         }
-        if self.modifier != 0{
+        if !self.modifier.is_empty() && matches!(self.event,EventTypes::Keyboard(_)){
             result += &self.event.to_string().to_uppercase();
         }else{
             result += &self.event.to_string();
@@ -312,9 +351,39 @@ impl Event{
                         EventTypes::from(KeyEvent::Letter(c))
                     }
                     // mouse input
-                    b'M' => {
+                    x if x == b'M' || x == b'm' => {
+                        let mut default_mouse_action = match x {
+                            b'M' => MouseAction::Press,
+                            _ => MouseAction::Release,
+                        };
                         self.mouse_pos = Some((arr_to_u16(csi[1]), arr_to_u16(csi[2])));
-                        EventTypes::from(KeyEvent::Undefined)
+                        let first_csi = arr_to_u8(&csi[0][1..]);
+                        self.modifier = match first_csi {
+                            x if x.contains(16) => CTRL,
+                            x if x.contains(8) => ALT,
+                            x if x.contains(4) => SHIFT,
+                            _ => 0,
+                        };
+                        let mouse_event = match first_csi {
+                            x if x.contains(65) => {
+                                default_mouse_action = MouseAction::Undefined;
+                                MouseEvent::ScrollDown
+                            },
+                            x if x.contains(64) => {
+                                default_mouse_action = MouseAction::Undefined;
+                                MouseEvent::ScrollUp
+                            },
+                            x if x.contains(3) => MouseEvent::Move,
+                            x if x.contains(2) => MouseEvent::RightClick,
+                            x if x.contains(1) => MouseEvent::MiddleClick,
+                            x if x.contains(0) => MouseEvent::LeftClick,
+                            _ => MouseEvent::Undefined
+                        };
+                        let mouse_action = match first_csi {
+                            x if x.contains(32) => MouseAction::Drag,
+                            _ => default_mouse_action
+                        };
+                        EventTypes::from((mouse_event,mouse_action))
                     },
                     _ => return
                 };
@@ -387,7 +456,7 @@ fn arr_to_u8(arr: &[u8]) -> u8{
     let mut result: u8 = 0;
     for byte in arr{
         if !byte.is_ascii_digit(){
-            return 0;
+            return result;
         }
         result *= 10;
         result += byte - b'0';
@@ -399,7 +468,7 @@ fn arr_to_u16(arr: &[u8]) -> u16{
     let mut result: u16 = 0;
     for byte in arr{
         if !byte.is_ascii_digit(){
-            return 0;
+            return result;
         }
         result *= 10;
         result += (byte - b'0') as u16;
