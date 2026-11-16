@@ -8,7 +8,7 @@ use std::sync::{Arc,Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::os::Termios;
-use crate::input_handler::{Buffer, RawInputBuffer};
+use crate::input_handler::RawInputBuffer;
 use crate::input_handler::Event;
 
 pub trait ListenerFn : Fn(&Event) + Send + Sync + 'static{}
@@ -99,7 +99,6 @@ pub enum MouseMode{
 }
 
 pub struct Input{
-    value: Option<Buffer>,
     listener: Arc<Mutex<Listener>>,
     thread_handle: Option<JoinHandle<Result<(), Error>>>,
     stopper: Arc<Stopper>,
@@ -120,9 +119,10 @@ impl Input{
         let listener = Arc::new(Mutex::new(Vec::new()));
         let stopper = Arc::new(Stopper::new());
 
-        Input{value: None, thread_handle: None, listener: listener, stopper, termios}
+        Input{thread_handle: None, listener: listener, stopper, termios}
     }
 
+    /// Enter termios raw mode
     pub fn raw_mode(&mut self) -> io::Result<()>{
         match self.termios.as_mut() {
             Some(termios) => termios.raw_mode(),
@@ -130,10 +130,7 @@ impl Input{
         }
     }
 
-    pub fn listener<F>(&mut self, listener: F)
-    where
-        F: ListenerFn
-    {
+    fn spawn_thread(&mut self){
         let thread_stopper = Arc::clone(&self.stopper);
         let thread_listener = Arc::clone(&self.listener);
 
@@ -202,9 +199,18 @@ impl Input{
             }
             Ok(())
         });
-
-        self.listener.lock().unwrap().push(Box::new(listener));
         self.thread_handle = Some(handle);
+    }
+
+    pub fn add_listener<F>(&mut self, listener: F)
+    where
+        F: ListenerFn
+    {
+        match self.thread_handle {
+            Some(_) => (),
+            None => self.spawn_thread(),
+        }
+        self.listener.lock().unwrap().push(Box::new(listener));
     }
 
     pub fn stopper(&self) -> Arc<Stopper>{

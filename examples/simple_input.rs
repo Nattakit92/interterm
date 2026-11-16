@@ -6,7 +6,7 @@ fn main() -> io::Result<()>{
     let mut input = Input::new();
     let stopper = input.stopper();
     _ = input.raw_mode();
-    input.listener(move |event| {
+    input.add_listener(move |event| {
         if event == "CTRL+C"{
             stopper.stop();
         }

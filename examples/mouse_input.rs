@@ -8,7 +8,7 @@ fn main() -> io::Result<()>{
     input.raw_mode()?;
     input.set_mouse_mode(MouseMode::Everything)?;
     let stopper = input.stopper();
-    input.listener(move |buf| {
+    input.add_listener(move |buf| {
         let buf_raw = buf.get_raw();
         if buf_raw == "\u{3}"{
             stopper.stop();

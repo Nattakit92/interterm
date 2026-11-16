@@ -1,51 +1,23 @@
 pub type RawInputBuffer = Vec<u8>;
+pub type Modifier = u8;
 
-pub struct Buffer{
-    data: Vec<String>,
-    history: Vec<String>,
-    x: usize,
-    y: usize,
+pub trait BitflagsExt {
+    fn contains(&self, other: Self) -> bool;
 }
 
-impl Buffer{
-    pub fn new() -> Self{
-        Buffer { data: vec![String::new()], history: Vec::new(), x: 0, y: 0}
-    }
-    pub fn insert(&mut self, ch: char){
-        self.data[self.y].insert(self.x, ch);
-        self.x += 1;
+impl BitflagsExt for Modifier {
+    fn contains(&self, other: Self) -> bool {
+        self & other == other
     }
 }
 
-impl From<Buffer> for String {
-    fn from(value: Buffer) -> Self {
-        value.data.join("\n")
-    }
-}
+const SHIFT:   Modifier = 0b0000001;
+const ALT:     Modifier = 0b0000010;
+const CTRL:    Modifier = 0b0000100;
+const SUPER:   Modifier = 0b0001000;
 
-impl From<String> for Buffer{
-    fn from(value: String) -> Self {
-        let mut data: Vec<String> = vec![String::new()];
-        let mut i = 0;
-        for c in value.chars(){
-            if c == '\n'{
-                data.push(String::new());
-                i+=1;
-            }else {
-                data[i].push(c);
-            }
-        }
-        Buffer { data: data.clone(), history: Vec::new(), x: data[i].len()-1, y: i }
-    }
-}
-
-const SHIFT:   u8 = 0b0000001;
-const ALT:     u8 = 0b0000010;
-const CTRL:    u8 = 0b0000100;
-const SUPER:   u8 = 0b0001000;
-
-#[derive(PartialEq)]
-enum KeyEvent{
+#[derive(PartialEq,Clone)]
+pub enum KeyEvent{
     Letter(char), Function(u8),
     Up, Down, Left, Right,
     Enter, Backspace, Tabs, Escape, Space,
@@ -113,15 +85,15 @@ impl ToString for KeyEvent{
     }
 }
 
-#[derive(PartialEq)]
-enum MouseEvent {
+#[derive(PartialEq,Clone)]
+pub enum MouseEvent {
     LeftClick, RightClick, MiddleClick,
     ScrollUp, ScrollDown,
     Undefined
 }
 
-#[derive(PartialEq)]
-enum MouseAction {
+#[derive(PartialEq,Clone)]
+pub enum MouseAction {
     Press, Release, Drag
 }
 
@@ -199,7 +171,7 @@ impl From<&str> for EventTypes{
 
 pub struct Event{
     raw: String,
-    modifier: u8,
+    modifier: Modifier,
     event: EventTypes,
     mouse_pos: Option<(u16,u16)>
 }
@@ -224,16 +196,16 @@ impl PartialEq<str> for Event{
 impl<'a> ToString for Event{
     fn to_string(&self) -> String {
         let mut result = String::new();
-        if self.modifier & CTRL != 0{
+        if self.modifier.contains(CTRL){
             result += "CTRL+"
         }
-        if self.modifier & SHIFT != 0{
+        if self.modifier.contains(SHIFT){
             result += "SHIFT+"
         }
-        if self.modifier & ALT != 0{
+        if self.modifier.contains(ALT){
             result += "ALT+"
         }
-        if self.modifier & SUPER != 0{
+        if self.modifier.contains(SUPER){
             result += "SUPER+"
         }
         if self.modifier != 0{
@@ -386,6 +358,28 @@ impl Event{
 
     pub fn get_mouse_pos(&self) -> Option<(u16,u16)>{
         self.mouse_pos
+    }
+
+    pub fn get_mouse_input(&self) -> Option<(MouseEvent, MouseAction)>{
+        match &self.event {
+            EventTypes::Mouse(event, action) => {
+                Some((event.clone(),action.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    pub fn get_key_input(&self) -> Option<KeyEvent>{
+        match &self.event {
+            EventTypes::Keyboard(key) => {
+                Some(key.clone())
+            }
+            _ => None,
+        }
+    }
+
+    pub fn get_key_mod(&self) -> Modifier{
+        self.modifier.clone()
     }
 }
 
