@@ -1,6 +1,6 @@
 pub mod os;
+pub mod input_handler;
 mod termios;
-mod input_handler;
 
 use std::io::{self, Error, Read, Write, stdin, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};

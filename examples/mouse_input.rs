@@ -1,6 +1,7 @@
 use std::io::{self, Write};
 
 use interterm::{Input,MouseMode};
+use interterm::input_handler::{MouseAction, MouseEvent};
 
 fn main() -> io::Result<()>{
     let mut input = Input::new();
@@ -9,19 +10,19 @@ fn main() -> io::Result<()>{
     input.set_mouse_mode(MouseMode::Everything)?;
     let stopper = input.stopper();
     input.add_listener(move |buf| {
-        // let buf_raw = buf.get_raw();
-        // if buf_raw == "\u{3}"{
-        //     stopper.stop();
-        // }
-        // println!("You type:{:?}",buf_raw);
-
-        let mouse_pos = buf.get_mouse_pos();
         if buf == "CTRL+C"{
             stopper.stop();
         }
-        println!("{}", buf.to_string());
-        if mouse_pos.is_some(){
-            println!("Mouse pos: {},{}",mouse_pos.unwrap().0,mouse_pos.unwrap().1)
+    });
+    input.add_listener(move |buf| {
+        let (x,y) = buf.get_mouse_pos().unwrap();
+        if buf.get_mouse_input().is_some(){
+            if matches!(buf.get_mouse_input().unwrap().1, MouseAction::Drag){
+                println!("pos: {}, {}", x, y);
+            }
+            if !matches!(buf.get_mouse_input().unwrap().0, MouseEvent::Move){
+                println!("action: {}",buf.to_string());
+            }
         }
     });
     input.wait()
