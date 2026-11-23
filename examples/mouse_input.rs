@@ -17,10 +17,11 @@ fn main() -> io::Result<()>{
     input.add_listener(move |buf| {
         let (x,y) = buf.get_mouse_pos().unwrap();
         if buf.get_mouse_input().is_some(){
-            if matches!(buf.get_mouse_input().unwrap().1, MouseAction::Drag){
+            let (event,action) = buf.get_mouse_input().unwrap();
+            if matches!(action, MouseAction::Drag){
                 println!("pos: {}, {}", x, y);
             }
-            if !matches!(buf.get_mouse_input().unwrap().0, MouseEvent::Move){
+            if !matches!(event, MouseEvent::Move){
                 println!("action: {}",buf.to_string());
             }
         }
