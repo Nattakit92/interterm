@@ -13,14 +13,16 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
 
+    defaults:
+          run:
+            working-directory: crates/interterm-input
+
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
 
     steps:
     - uses: actions/checkout@v7
-    - name: Change directory to interterm-input
-      run: cd crates/interterm-input
     - name: Add permision
       run: chmod +x test/simple_input.sh
     - name: Test chinese
