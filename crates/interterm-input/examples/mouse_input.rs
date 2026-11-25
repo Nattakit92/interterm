@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
-use interterm::{Input,MouseMode};
-use interterm::input_handler::{MouseAction, MouseEvent};
+use interterm_input::{Input,MouseMode};
+use interterm_input::input_handler::{MouseAction, MouseEvent};
 
 fn main() -> io::Result<()>{
     let mut input = Input::new();

@@ -1,6 +1,6 @@
 use std::io;
 
-use interterm::Input;
+use interterm_input::Input;
 
 fn main() -> io::Result<()>{
     let mut input = Input::new();
