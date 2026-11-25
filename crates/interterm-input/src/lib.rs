@@ -1,0 +1,264 @@
+pub mod os;
+pub mod input_handler;
+mod termios;
+
+use std::io::{self, Error, Read, Write, stdin, stdout};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc,Mutex};
+use std::thread::{self, JoinHandle};
+
+use crate::os::Termios;
+use crate::input_handler::RawInputBuffer;
+use crate::input_handler::Event;
+
+pub trait ListenerFn : Fn(&Event) + Send + Sync + 'static{}
+impl<T: Fn(&Event) + Send + Sync + 'static> ListenerFn for T {}
+
+pub type Listener = Vec<Box<dyn ListenerFn>>;
+
+pub struct Stopper{
+    flag: AtomicBool
+}
+
+impl Stopper{
+    pub fn new() -> Self{
+        Stopper { flag: AtomicBool::new(false) }
+    }
+    pub fn stop(&self){
+        self.flag.store(true, Ordering::SeqCst);
+    }
+    pub fn is_stopped(&self) -> bool{
+        self.flag.load(Ordering::SeqCst)
+    }
+}
+
+struct TermiosHandler{
+    termios: Termios,
+    original: Termios
+}
+
+impl Drop for TermiosHandler{
+    fn drop(&mut self){
+        _ = Termios::setattr(&mut self.original)
+    }
+}
+
+impl TermiosHandler {
+    fn new() -> Option<Self>{
+        match Termios::new() {
+            Ok(termios) => {
+                Some(TermiosHandler {
+                    termios: termios.clone(),
+                    original: termios
+                })
+            },
+            Err(_) => None
+        }
+    }
+
+    fn set_read_timeout(&mut self, decisec: u8) -> io::Result<()>{
+        Termios::timeout_decis(decisec, &mut self.termios)
+    }
+
+    fn raw_mode(&mut self) -> io::Result<()>{
+        Termios::raw_mode(&mut self.termios)
+    }
+
+    fn supports_kitty_keyboard_protocol(&mut self) -> bool{
+        let mut temp = self.termios.clone();
+        if Termios::raw_mode(&mut temp).is_err() || Termios::timeout_decis(1, &mut temp).is_err(){
+            _ = Termios::setattr(&mut self.termios);
+            return false;
+        }
+        print!("\x1b[?u");
+        if io::stdout().flush().is_err(){
+            _ = Termios::setattr(&mut self.termios);
+            return false;
+        }
+
+        let mut _s = String::new();
+        let result: bool;
+        match io::stdin().read_line(&mut _s) {
+            Ok(n) if n > 0 => result = true,
+            _ => result = false
+        }
+        _ = Termios::setattr(&mut self.termios);
+        result
+    }
+}
+
+pub enum MouseMode{
+    /// Mouse input is disable
+    Disable,
+    /// Only capture click events
+    Clicks,
+    /// Capture click and drag events
+    Drag,
+    /// Capture click, drag and movement events
+    Everything
+}
+
+pub struct Input{
+    listener: Arc<Mutex<Listener>>,
+    thread_handle: Option<JoinHandle<Result<(), Error>>>,
+    stopper: Arc<Stopper>,
+    termios: Option<TermiosHandler>,
+}
+
+impl Drop for Input{
+    fn drop(&mut self) {
+        _ = self.set_mouse_mode(MouseMode::Disable);
+        self.stopper().stop();
+    }
+}
+
+impl Input{
+    pub fn new() -> Self {
+        let termios = TermiosHandler::new();
+
+        let listener = Arc::new(Mutex::new(Vec::new()));
+        let stopper = Arc::new(Stopper::new());
+
+        Input{thread_handle: None, listener: listener, stopper, termios}
+    }
+
+    /// Enter termios raw mode
+    pub fn raw_mode(&mut self) -> io::Result<()>{
+        match self.termios.as_mut() {
+            Some(termios) => termios.raw_mode(),
+            None => Err(Error::new(io::ErrorKind::Other, "Cannot set to raw mode"))
+        }
+    }
+
+    fn spawn_thread(&mut self){
+        let thread_stopper = Arc::clone(&self.stopper);
+        let thread_listener = Arc::clone(&self.listener);
+
+        let handle: JoinHandle<Result<(), Error>> = thread::spawn(move || {
+            stdout().flush().unwrap();
+            let mut keypressed = Event::new();
+            while !thread_stopper.is_stopped(){
+                let mut chunk: [u8; 1024] = [0; 1024];
+                let mut buf: RawInputBuffer = Default::default();
+                let mut n ;
+                n = stdin().read(&mut chunk)?;
+                if n == 0{
+                    thread_stopper.stop();
+                    break;
+                }
+                if chunk[0] == 27{
+                    loop{
+                        if n==0{
+                            break;
+                        }
+                        match chunk[n-1] {
+                            x if x.is_ascii_alphabetic() || x == b'~' => {
+                                buf.extend_from_slice(&chunk[..n]);
+                                break;
+                            },
+                            _ => buf.extend_from_slice(&chunk[..n]),
+                        }
+                        n = stdin().read(&mut chunk).unwrap();
+                    }
+                    n = buf.len();
+                    let guard = thread_listener.lock().unwrap();
+                    keypressed.update(buf, n);
+                    for l in guard.iter(){
+                        l(&keypressed);
+                    }
+                }else{
+                    let mut iter = chunk.iter();
+                    while let Some(first) = iter.next(){
+                        let n = match first {
+                            b'\0' => continue,
+                            x if x >> 7 == 0 => 1,
+                            x if x >> 5 == 0b110 => 2,
+                            x if x >> 4 == 0b1110 => 3,
+                            x if x >> 3 == 0b11110 => 4,
+                            _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid input")),
+                        };
+                        let mut buf = vec![*first];
+                        for _ in 0..(n - 1) {
+                            if let Some(next_byte) = iter.next().copied() {
+                                buf.push(next_byte);
+                            } else {
+                                let missing_count = n - buf.len();
+                                let mut chunk = vec![0u8; missing_count];
+                                io::stdin().read_exact(&mut chunk)?;
+                                buf.extend(chunk);
+                                break;
+                            }
+                        }
+                        let guard = thread_listener.lock().unwrap();
+                        keypressed.update(buf, n);
+                        for l in guard.iter(){
+                            l(&keypressed);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        });
+        self.thread_handle = Some(handle);
+    }
+
+    pub fn add_listener<F>(&mut self, listener: F)
+    where
+        F: ListenerFn
+    {
+        match self.thread_handle {
+            Some(_) => (),
+            None => self.spawn_thread(),
+        }
+        self.listener.lock().unwrap().push(Box::new(listener));
+    }
+
+    pub fn stopper(&self) -> Arc<Stopper>{
+        Arc::clone(&self.stopper)
+    }
+
+    pub fn wait(&mut self) -> Result<(), Error>{
+        if let Some(handle) = self.thread_handle.take() {
+            match handle.join() {
+                Ok(x) => {
+                    if x.is_err(){
+                        return Err(x.err().unwrap());
+                    }
+                },
+                Err(_) => return Err(Error::new(io::ErrorKind::Other, "Join error"))
+            }
+        }
+        Ok(())
+    }
+
+    pub fn is_done(&self) -> bool{
+        self.stopper.is_stopped()
+    }
+
+    /// Sets a read timeout for input operations in deciseconds (1/10 of a second).
+    pub fn set_read_timeout(&mut self, decisec: u8) -> io::Result<()>{
+        match self.termios.as_mut() {
+            Some(termios) => termios.set_read_timeout(decisec),
+            None => Err(Error::new(io::ErrorKind::Other, "Cannot set read timeout"))
+        }
+    }
+
+    pub fn supports_kitty_keyboard_protocol(&mut self) -> bool{
+        match self.termios.as_mut() {
+            Some(termios) => termios.supports_kitty_keyboard_protocol(),
+            None => false
+        }
+    }
+
+    pub fn set_mouse_mode(&mut self, mode: MouseMode) -> io::Result<()>{
+        let mut stdout = io::stdout().lock();
+        write!(stdout,"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l")?;
+        match mode {
+            MouseMode::Disable => (),
+            MouseMode::Clicks => write!(stdout,"\x1b[?1000h\x1b[?1006h")?,
+            MouseMode::Drag => write!(stdout,"\x1b[?1002h\x1b[?1006h")?,
+            MouseMode::Everything => write!(stdout,"\x1b[?1003h\x1b[?1006h")?,
+        }
+        stdout.flush()
+    }
+}
