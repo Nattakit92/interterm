@@ -1,7 +1,5 @@
 [package]
-name = "interterm"
+name = "interterm-input"
 version = "0.1.0"
 edition = "2024"
-description = "A clean and easy-to-use Rust library for handling interactive terminal user input."
-
-[dependencies]
+description = "A input library for interterm"
